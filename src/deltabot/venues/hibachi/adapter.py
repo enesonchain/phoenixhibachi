@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from decimal import Decimal
 
@@ -145,13 +146,24 @@ class HibachiVenue(PerpVenue):
         order_id = body.get("orderId")
         if order_id is None:
             raise VenueError(self.name, f"no orderId in order response: {body}")
-        # Market orders fill (or die) server-side; poll once for the outcome.
-        status_body = {}
-        try:
-            status_body = await self.client.order_status(order_id)
-        except VenueError:
-            log.warning("hibachi: could not fetch status for order %s", order_id)
-        status = _STATUS_MAP.get(str(status_body.get("status", "")), OrderStatus.UNKNOWN)
+        # Market orders fill (or die) server-side but not always instantly:
+        # poll briefly until the status is terminal so a still-PENDING fill
+        # isn't misread as a failed leg by the pair executor.
+        status_body: dict = {}
+        status = OrderStatus.UNKNOWN
+        for attempt in range(6):
+            if attempt:
+                await asyncio.sleep(0.5)
+            try:
+                status_body = await self.client.order_status(order_id)
+            except VenueError:
+                log.warning("hibachi: could not fetch status for order %s", order_id)
+                continue
+            status = _STATUS_MAP.get(str(status_body.get("status", "")), OrderStatus.UNKNOWN)
+            if status.is_terminal:
+                break
+            if request.order_type is OrderType.LIMIT and status is OrderStatus.PLACED:
+                break  # resting limit order: PLACED is its steady state
         total = status_body.get("totalQuantity")
         available = status_body.get("availableQuantity")
         filled = Decimal(0)

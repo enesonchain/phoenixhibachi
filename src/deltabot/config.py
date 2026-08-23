@@ -38,7 +38,9 @@ class HibachiConfig:
     data_api_url: str | None = None
     # Decimal fraction, not percent: 0.0005 = 5 bps; must cover your taker fee.
     max_fees_percent: Decimal = Decimal("0.0005")
-    funding_interval_hours: Decimal = Decimal(1)
+    # Fallback only — the adapter infers the actual cadence from settlement
+    # history. Hibachi settles every 8h (00:00/08:00/16:00 UTC).
+    funding_interval_hours: Decimal = Decimal(8)
 
 
 @dataclass

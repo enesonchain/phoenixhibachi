@@ -115,7 +115,9 @@ positions on both venues, then:
   rather than continuing.
 
 Funding normalization: each venue's rate is stored per-interval with its
-interval (both venues settle hourly) and compared as annualized rates.
+interval — Phoenix settles hourly, Hibachi every 8 hours (00:00/08:00/16:00
+UTC; the adapter re-infers the cadence from settlement history at startup) —
+and compared as annualized rates.
 Positive funding = longs pay shorts on both venues; the Phoenix adapter
 cross-checks its annualization against the API's own figure and refuses to
 trade if the scales disagree (protects against fraction/percent drift).

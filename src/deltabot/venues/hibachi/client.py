@@ -129,12 +129,11 @@ class HibachiClient:
         """Mark/ask/bid/spot prices plus funding rate estimation."""
         return await self._get_market_data(f"/market/data/prices?symbol={symbol}")
 
-    async def funding_rates(self, symbol: str) -> list[dict]:
+    async def funding_rates(self, symbol: str, limit: int = 10) -> list[dict]:
         """Historical funding settlements: {contractId, fundingTimestamp,
-        fundingRate, indexPrice} newest-first."""
-        contract = await self.contract(symbol)
+        fundingRate, indexPrice} (timestamps in unix seconds)."""
         body = await self._get_market_data(
-            f"/market/data/funding-rates?contractId={contract['id']}"
+            f"/market/data/funding-rates?symbol={symbol}&limit={limit}"
         )
         if isinstance(body, dict):
             return body.get("data", [])
@@ -181,6 +180,7 @@ class HibachiClient:
         post_only: bool = False,
         ioc: bool = False,
         creation_deadline_s: float | None = None,
+        client_id: str | None = None,
     ) -> dict:
         """Place a market (price=None) or limit order. Returns {orderId, ...}."""
         contract = await self.contract(symbol)
@@ -214,6 +214,10 @@ class HibachiClient:
             request["orderFlags"] = flags[0]
         if creation_deadline_s is not None:
             request["creationDeadline"] = int((time.time() + creation_deadline_s) * 1_000_000)
+        if client_id is not None:
+            # Idempotency key: 1-32 chars of [A-Za-z0-9-], unique among
+            # active/recent orders; also usable to query/cancel.
+            request["clientId"] = client_id
         body = await self._authed("POST", "/trade/order", json=request)
         body["nonce"] = nonce
         return body

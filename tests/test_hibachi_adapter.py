@@ -60,12 +60,28 @@ def make_venue() -> HibachiVenue:
     return HibachiVenue(api_key="test-key", account_id=42, private_key=TEST_KEY)
 
 
+FUNDING_HISTORY = {
+    "data": [
+        # settlements on exact 8h boundaries (00:00/08:00/16:00 UTC)
+        {"contractId": 2, "fundingTimestamp": 1755936000, "fundingRate": "0.0001",
+         "indexPrice": "65000"},
+        {"contractId": 2, "fundingTimestamp": 1755907200, "fundingRate": "0.00012",
+         "indexPrice": "64900"},
+        {"contractId": 2, "fundingTimestamp": 1755878400, "fundingRate": "0.00009",
+         "indexPrice": "64800"},
+    ]
+}
+
+
 def mock_data(router: respx.MockRouter):
     router.get(f"{DATA}/market/exchange-info").mock(
         return_value=httpx.Response(200, json=EXCHANGE_INFO)
     )
     router.get(f"{DATA}/market/data/prices").mock(
         return_value=httpx.Response(200, json=PRICES)
+    )
+    router.get(f"{DATA}/market/data/funding-rates").mock(
+        return_value=httpx.Response(200, json=FUNDING_HISTORY)
     )
 
 
@@ -75,12 +91,54 @@ async def test_funding_and_market_spec():
     venue = make_venue()
     funding = await venue.get_funding("BTC/USDT-P")
     assert funding.rate == Decimal("0.0000125")
-    assert funding.interval_hours == 1
+    # interval inferred from consecutive settlement timestamps (8h apart)
+    assert funding.interval_hours == 8
     assert funding.mark_price == Decimal("65000.0")
+    # per-interval rate / 8 hours, annualized
+    assert funding.annualized == Decimal("0.0000125") / 8 * 24 * 365
 
     spec = await venue.get_market("BTC/USDT-P")
     assert spec.step_size == Decimal("0.0001")
     assert spec.extra["contract_id"] == 2
+    await venue.close()
+
+
+@respx.mock
+async def test_funding_interval_falls_back_when_history_unavailable():
+    respx.mock.get(f"{DATA}/market/exchange-info").mock(
+        return_value=httpx.Response(200, json=EXCHANGE_INFO)
+    )
+    respx.mock.get(f"{DATA}/market/data/prices").mock(
+        return_value=httpx.Response(200, json=PRICES)
+    )
+    respx.mock.get(f"{DATA}/market/data/funding-rates").mock(
+        return_value=httpx.Response(500, text="oops")
+    )
+    venue = make_venue()
+    funding = await venue.get_funding("BTC/USDT-P")
+    assert funding.interval_hours == 8  # configured fallback
+    await venue.close()
+
+
+@respx.mock
+async def test_funding_interval_inference_detects_hourly():
+    hourly = {"data": [
+        {"contractId": 2, "fundingTimestamp": 1755936000, "fundingRate": "0.0001"},
+        {"contractId": 2, "fundingTimestamp": 1755932400, "fundingRate": "0.0001"},
+        {"contractId": 2, "fundingTimestamp": 1755928800, "fundingRate": "0.0001"},
+    ]}
+    respx.mock.get(f"{DATA}/market/exchange-info").mock(
+        return_value=httpx.Response(200, json=EXCHANGE_INFO)
+    )
+    respx.mock.get(f"{DATA}/market/data/prices").mock(
+        return_value=httpx.Response(200, json=PRICES)
+    )
+    respx.mock.get(f"{DATA}/market/data/funding-rates").mock(
+        return_value=httpx.Response(200, json=hourly)
+    )
+    venue = make_venue()
+    funding = await venue.get_funding("BTC/USDT-P")
+    assert funding.interval_hours == 1
     await venue.close()
 
 

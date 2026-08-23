@@ -23,10 +23,18 @@ Conventions
 - `maxFeesPercent` (required on place/modify): max accepted fee as a decimal
   fraction (`0.00045` = 4.5 bps taker default), part of the signature.
 - Order flags: single optional value of `POST_ONLY | IOC | REDUCE_ONLY`.
-- Funding: settled hourly; estimate at `/market/data/prices`
-  (`fundingRateEstimation {estimatedFundingRate, nextFundingTimestamp}`),
-  history at `/market/data/funding-rates?contractId=N`, payments in
-  `/trade/account/settlements_history`.
+- Funding: settled every 8 hours at 00:00/08:00/16:00 UTC (accrues per-second
+  within the interval; formula = avg premium index + clamp(0.01%/8h interest
+  − premium, ±0.05%), Binance/Hyperliquid style). Estimate at
+  `/market/data/prices` (`fundingRateEstimation {estimatedFundingRate,
+  nextFundingTimestamp}`), history at
+  `/market/data/funding-rates?symbol=&limit=` (timestamps unix seconds),
+  payments in `/trade/account/settlements_history`.
+- `clientId` (optional on place order): 1–32 chars `[A-Za-z0-9-]`, unique
+  among active/recent orders — an idempotency key, also usable to
+  query/modify/cancel.
+- Staging hosts exist (`api-staging.hibachi.xyz`, `data-api-staging...`);
+  public availability unconfirmed — ask Hibachi support.
 
 Order signing (see `venues/hibachi/signing.py`, verified byte-for-byte
 against the SDK): big-endian binary payload

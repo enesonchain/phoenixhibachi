@@ -25,6 +25,7 @@ class BotController:
     symbols: dict[str, str]
 
     paused: bool = False
+    restart_requested: bool = False
     _close_requested: bool = False
     _enter_requested: bool = False
     _clear_halt_requested: bool = False

@@ -62,6 +62,9 @@ class Engine:
         log.info("engine starting in phase %s", self.state.phase.value)
         while True:
             await self.tick()
+            if self.controller is not None and self.controller.restart_requested:
+                log.info("restart requested from dashboard; stopping cleanly")
+                return
             if self.state.phase is Phase.HALTED:
                 if self.controller is None:
                     log.error(

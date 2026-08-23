@@ -60,6 +60,21 @@ src/deltabot/
     └── engine.py        FLAT→ENTERING→OPEN→EXITING state machine
 ```
 
+## Non-developer quickstart (macOS)
+
+After the one-time install below, you never need the terminal again:
+
+- **Start the bot**: double-click **`Start PhoenixHibachi.command`** in the
+  bot folder (first time: right-click → Open). It starts the bot and opens
+  the dashboard in your browser.
+- **Change anything** — funding vs volume-farming mode, paper vs live,
+  cycle sizes, budgets — in the dashboard's **Bot settings** card. Saved
+  settings survive restarts; the panel offers a restart button when one is
+  needed.
+- **Get updates**: click **Update bot** in the dashboard — it pulls the
+  latest code and restarts itself.
+- **Stop the bot**: close its terminal window (or Ctrl+C in it).
+
 ## Setup
 
 ```bash

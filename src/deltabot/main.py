@@ -74,12 +74,15 @@ async def cmd_run(cfg: BotConfig) -> int:
     controller = None
     dashboard_runner = None
     if cfg.dashboard.enabled:
+        from deltabot.config import overrides_path
         from deltabot.control import BotController
         from deltabot.dashboard.server import start_dashboard
+        from deltabot.dashboard.settings import SettingsManager
 
         controller = BotController(paper=cfg.paper, symbols=symbols)
         dashboard_runner = await start_dashboard(
-            controller, host=cfg.dashboard.host, port=cfg.dashboard.port
+            controller, host=cfg.dashboard.host, port=cfg.dashboard.port,
+            settings=SettingsManager(cfg, overrides_path(cfg)),
         )
         log.info(
             "dashboard: http://%s:%d (local only — it can close positions)",
@@ -108,6 +111,8 @@ async def cmd_run(cfg: BotConfig) -> int:
         await hibachi.close()
         await phoenix.close()
         lock.close()
+    if controller is not None and controller.restart_requested:
+        return 42  # the launcher loop restarts us on exactly this code
     return 1 if engine.state.halt_reason else 0
 
 

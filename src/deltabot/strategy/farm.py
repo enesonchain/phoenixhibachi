@@ -74,6 +74,9 @@ class FarmEngine:
         )
         while True:
             await self.tick()
+            if self.controller is not None and self.controller.restart_requested:
+                log.info("restart requested from dashboard; stopping cleanly")
+                return
             if self.state.phase is Phase.HALTED and self.controller is None:
                 log.error("farm HALTED: %s", self.state.halt_reason)
                 return

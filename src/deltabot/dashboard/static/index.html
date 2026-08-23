@@ -124,11 +124,14 @@
   form.settings { display:grid; gap:8px; }
   form.settings label { font-size:12px; color:var(--ink-2); font-weight:600; }
   form.settings .field { display:flex; align-items:center; gap:8px; justify-content:space-between; }
-  form.settings input {
-    font:inherit; font-variant-numeric:tabular-nums; width:110px; text-align:right;
+  form.settings input, form.settings select {
+    font:inherit; font-variant-numeric:tabular-nums; width:150px; text-align:right;
     background:var(--page); color:var(--ink-1);
     border:1px solid var(--border); border-radius:7px; padding:5px 8px;
   }
+  form.settings select { text-align:left; }
+  .btnrow { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .savedmsg { color:var(--delta-up); font-size:12px; font-weight:600; }
   form.settings .applied { color:var(--delta-up); font-size:12px; font-weight:600; min-height:1.2em; }
 
   ul.incidents { list-style:none; max-height:220px; overflow-y:auto; }
@@ -230,6 +233,40 @@
   <div class="card">
     <h2>Incidents</h2>
     <ul class="incidents" id="incidents"><li class="empty">None recorded.</li></ul>
+  </div>
+  <div class="card hidden" id="botset-card">
+    <h2>Bot settings <small>· saved to disk; big changes apply after restart</small></h2>
+    <form class="settings" id="botset" autocomplete="off">
+      <div class="field"><label for="s-mode">What the bot does</label>
+        <select id="s-mode">
+          <option value="funding">Funding arbitrage</option>
+          <option value="volume">Volume farming</option>
+        </select></div>
+      <div class="field"><label for="s-paper">Trading</label>
+        <select id="s-paper">
+          <option value="true">Paper (simulated)</option>
+          <option value="false">LIVE — real money</option>
+        </select></div>
+      <div id="volset" class="hidden" style="display:grid;gap:8px">
+        <div class="field"><label for="s-style">Cycle style</label>
+          <select id="s-style">
+            <option value="pair">Hedged pair (both venues)</option>
+            <option value="solo">Solo (one venue)</option>
+          </select></div>
+        <div class="field"><label for="s-solo">Solo venue</label>
+          <select id="s-solo"><option value="hibachi">hibachi</option><option value="phoenix">phoenix</option></select></div>
+        <div class="field"><label for="s-cyc">Cycle size ($ per leg)</label><input id="s-cyc" inputmode="decimal"></div>
+        <div class="field"><label for="s-hold">Hold time (seconds)</label><input id="s-hold" inputmode="decimal"></div>
+        <div class="field"><label for="s-pause">Pause between cycles (s)</label><input id="s-pause" inputmode="decimal"></div>
+        <div class="field"><label for="s-vtarget">Daily volume target ($)</label><input id="s-vtarget" inputmode="decimal"></div>
+        <div class="field"><label for="s-fbudget">Daily fee budget ($)</label><input id="s-fbudget" inputmode="decimal"></div>
+      </div>
+      <div class="field"><span class="savedmsg" id="botset-msg"></span><button type="submit" class="primary">Save</button></div>
+    </form>
+    <div class="btnrow">
+      <button id="btn-restart" class="hidden danger">Restart bot now</button>
+      <button id="btn-update">Update bot</button>
+    </div>
   </div>
 </div>
 
@@ -493,6 +530,84 @@ function drawChart(s) {
   });
   hit.addEventListener("mouseleave", () => { cross.style.display = "none"; tip.style.display = "none"; });
 }
+
+/* --------------------------------------------------------------- settings */
+async function loadSettings() {
+  if (window.__DEMO__) return;
+  try {
+    const res = await fetch("/api/settings");
+    if (!res.ok) return;
+    const s = await res.json();
+    $("botset-card").classList.remove("hidden");
+    $("s-mode").value = s.mode;
+    $("s-paper").value = String(s.paper);
+    $("s-style").value = s.volume.style;
+    $("s-solo").value = s.volume.solo_venue;
+    $("s-cyc").value = s.volume.cycle_notional;
+    $("s-hold").value = s.volume.hold_s;
+    $("s-pause").value = s.volume.pause_s;
+    $("s-vtarget").value = s.volume.daily_volume_target;
+    $("s-fbudget").value = s.volume.max_daily_fees;
+    toggleVolset();
+  } catch (e) { /* settings API unavailable */ }
+}
+function toggleVolset() {
+  $("volset").classList.toggle("hidden", $("s-mode").value !== "volume");
+}
+$("s-mode").addEventListener("change", toggleVolset);
+$("s-paper").addEventListener("change", () => {
+  if ($("s-paper").value === "false" &&
+      !confirm("Switch to LIVE trading with real money?\n\nMake sure both accounts are funded and your keys are in .env. The change applies after you save and restart.")) {
+    $("s-paper").value = "true";
+  }
+});
+$("botset").addEventListener("submit", async e => {
+  e.preventDefault();
+  const payload = {
+    mode: $("s-mode").value,
+    paper: $("s-paper").value === "true",
+    volume: {
+      style: $("s-style").value,
+      solo_venue: $("s-solo").value,
+      cycle_notional: $("s-cyc").value,
+      hold_s: $("s-hold").value,
+      pause_s: $("s-pause").value,
+      daily_volume_target: $("s-vtarget").value,
+      max_daily_fees: $("s-fbudget").value,
+    },
+  };
+  const res = await post("/api/settings", payload);
+  if (res.ok) {
+    $("botset-msg").textContent = res.needs_restart ? "Saved — restart to apply" : "Saved ✓";
+    $("btn-restart").classList.toggle("hidden", !res.needs_restart);
+  } else {
+    $("botset-msg").textContent = "Rejected: " + Object.entries(res.errors || {}).map(([k,v]) => `${k}: ${v}`).join("; ");
+  }
+});
+let restartArmed = 0;
+$("btn-restart").addEventListener("click", async () => {
+  const btn = $("btn-restart");
+  if (Date.now() - restartArmed < 4000) {
+    restartArmed = 0;
+    btn.textContent = "Restarting…"; btn.disabled = true;
+    await post("/api/control", {action:"restart"});
+    setTimeout(() => { btn.textContent = "Restart bot now"; btn.disabled = false; btn.classList.add("hidden"); }, 8000);
+  } else {
+    restartArmed = Date.now(); btn.textContent = "Confirm restart?";
+    setTimeout(() => { if (Date.now() - restartArmed >= 4000) btn.textContent = "Restart bot now"; }, 4200);
+  }
+});
+$("btn-update").addEventListener("click", async () => {
+  const btn = $("btn-update");
+  btn.textContent = "Updating…"; btn.disabled = true;
+  try {
+    const res = await post("/api/control", {action:"update"});
+    alert("Update result:\n\n" + (res.output || "done") + "\nThe bot is restarting now.");
+  } finally {
+    setTimeout(() => { btn.textContent = "Update bot"; btn.disabled = false; }, 8000);
+  }
+});
+loadSettings();
 
 /* ------------------------------------------------------------------- loop */
 async function refresh() {

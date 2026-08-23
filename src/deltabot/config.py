@@ -135,6 +135,42 @@ def _decimals(d: dict, keys: tuple[str, ...]) -> dict:
     return {k: (Decimal(str(v)) if k in keys and v is not None else v) for k, v in d.items()}
 
 
+def overrides_path(cfg: "BotConfig") -> Path:
+    """Dashboard-managed settings overrides live next to the state file."""
+    return cfg.state_path.parent / "settings_overrides.json"
+
+
+def apply_overrides(cfg: "BotConfig", path: Path) -> None:
+    """Apply dashboard-saved settings on top of config.yaml. The dashboard
+    writes this file via /api/settings; unknown keys are ignored."""
+    import json
+
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+    if "mode" in data and data["mode"] in ("funding", "volume"):
+        cfg.mode = data["mode"]
+    if "paper" in data:
+        cfg.paper = bool(data["paper"])
+    for key in ("entry_apr", "exit_apr", "target_notional", "max_notional"):
+        if key in data.get("strategy", {}):
+            setattr(cfg.strategy, key, Decimal(str(data["strategy"][key])))
+    v = data.get("volume", {})
+    if v.get("style") in ("pair", "solo"):
+        cfg.volume.style = v["style"]
+    if v.get("solo_venue") in ("hibachi", "phoenix"):
+        cfg.volume.solo_venue = v["solo_venue"]
+    for key in ("cycle_notional", "daily_volume_target", "max_daily_fees"):
+        if key in v:
+            setattr(cfg.volume, key, Decimal(str(v[key])))
+    for key in ("hold_s", "pause_s"):
+        if key in v:
+            setattr(cfg.volume, key, float(v[key]))
+
+
 def load_config(path: str | Path) -> BotConfig:
     raw = yaml.safe_load(Path(path).read_text())
     raw = _interpolate(raw)
@@ -164,7 +200,7 @@ def load_config(path: str | Path) -> BotConfig:
         v["taker_fee"] = {k: Decimal(str(x)) for k, x in v["taker_fee"].items()}
     volume = VolumeConfig(**v)
 
-    return BotConfig(
+    cfg = BotConfig(
         hibachi=hibachi,
         phoenix=phoenix,
         mode=str(raw.get("mode", "funding")),
@@ -176,3 +212,5 @@ def load_config(path: str | Path) -> BotConfig:
         paper_start_balance=Decimal(str(raw.get("paper_start_balance", "10000"))),
         log_level=str(raw.get("log_level", "INFO")),
     )
+    apply_overrides(cfg, overrides_path(cfg))
+    return cfg

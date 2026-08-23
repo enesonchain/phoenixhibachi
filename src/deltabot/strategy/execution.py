@@ -186,8 +186,8 @@ class PairExecutor:
             return
         side = Side.SELL if residual > 0 else Side.BUY
         qty = abs(residual)
-        log.warning(
-            "%s: flattening residual %s %s (reduce-only %s %s)",
+        log.info(
+            "%s: closing %s %s (reduce-only %s %s)",
             venue_name, residual, symbol, side.value, qty,
         )
         try:

@@ -21,9 +21,9 @@ hibachi:
   # Max fee rate accepted per order, decimal fraction (0.0005 = 5 bps).
   # Must be >= your account taker fee (default taker is 0.00045).
   max_fees_percent: "0.0005"
-  # Fallback only: Hibachi settles funding every 8h (00:00/08:00/16:00 UTC);
-  # the bot infers the live cadence from settlement history at startup.
-  funding_interval_hours: 8
+  # Fallback only: the bot infers the live settlement cadence from funding
+  # history at startup (observed hourly; older docs said 8h).
+  funding_interval_hours: 1
 
 phoenix:
   symbol: BTC-PERP

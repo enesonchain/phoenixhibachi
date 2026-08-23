@@ -120,6 +120,27 @@ async def test_funding_scale_mismatch_refuses():
 
 
 @respx.mock
+async def test_symbol_resolution_bare_and_suffixed():
+    """Config says BTC-PERP but the venue lists the market as 'BTC' (or vice
+    versa): the client resolves the alias instead of 404ing."""
+    bare = [dict(MARKETS[0], symbol="BTC")]
+    respx.mock.get(f"{BASE}/v1/view/exchange/markets").mock(
+        return_value=httpx.Response(200, json=bare)
+    )
+    respx.mock.get(f"{BASE}/v1/market/BTC/stats/latest").mock(
+        return_value=httpx.Response(200, json=dict(STATS, symbol="BTC"))
+    )
+    venue = PhoenixVenue()
+    funding = await venue.get_funding("BTC-PERP")  # suffixed config, bare venue
+    assert funding.rate == Decimal("0.0001")
+    spec = await venue.get_market("btc")  # case-insensitive too
+    assert spec.venue == "phoenix"
+    with pytest.raises(Exception, match="unknown symbol"):
+        await venue.get_market("DOGE-PERP")
+    await venue.close()
+
+
+@respx.mock
 async def test_top_of_book():
     mock_data_routes(respx.mock)
     venue = PhoenixVenue()

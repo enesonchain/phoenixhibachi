@@ -30,7 +30,7 @@ def test_example_config_loads_with_env(monkeypatch):
     assert cfg.hibachi.account_id == 42
     assert cfg.hibachi.api_key == "k"
     assert cfg.hibachi.max_fees_percent == Decimal("0.0005")
-    assert cfg.hibachi.funding_interval_hours == Decimal("8")
+    assert cfg.hibachi.funding_interval_hours == Decimal("1")
     assert cfg.phoenix.rpc_url == "https://rpc.example"
     assert cfg.strategy.entry_apr == Decimal("0.10")
     assert cfg.strategy.exit_apr < cfg.strategy.entry_apr  # hysteresis sanity

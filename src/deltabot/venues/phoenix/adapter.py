@@ -226,10 +226,11 @@ class PhoenixVenue(PerpVenue):
             )
         side = "buy" if request.side is Side.BUY else "sell"
         # Send exact integer lots so no precision is lost to float conversion.
-        market = await self.data.market(request.symbol)
+        resolved = await self.data.canonical_symbol(request.symbol)
+        market = await self.data.market(resolved)
         lots = int(request.qty * Decimal(10) ** int(market["baseLotsDecimals"]))
         signature = await trading.place_isolated_market_order(
-            symbol=request.symbol,
+            symbol=resolved,
             side=side,
             num_base_lots=lots,
             reduce_only=request.reduce_only,

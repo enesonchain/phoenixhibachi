@@ -79,25 +79,49 @@ class PhoenixDataClient:
     async def markets(self) -> list[dict]:
         return await self._get("/v1/view/exchange/markets")
 
-    async def market(self, symbol: str) -> dict:
-        if symbol not in self._markets:
+    async def canonical_symbol(self, symbol: str) -> str:
+        """Resolve a configured symbol to the venue's actual market symbol.
+
+        Phoenix has used both bare ("BTC") and suffixed ("BTC-PERP") names, so
+        accept either spelling: exact match first, then case-insensitive, then
+        with "-PERP" stripped or appended.
+        """
+        if not self._markets:
             self._markets = {m["symbol"]: m for m in await self.markets()}
-        try:
-            return self._markets[symbol]
-        except KeyError:
-            known = ", ".join(sorted(self._markets)) or "<none>"
-            raise OrderRejected(
-                "phoenix", f"unknown symbol {symbol!r}; known: {known}"
-            ) from None
+        if symbol in self._markets:
+            return symbol
+        upper = symbol.upper()
+        candidates = [upper]
+        if upper.endswith("-PERP"):
+            candidates.append(upper[: -len("-PERP")])
+        else:
+            candidates.append(f"{upper}-PERP")
+        by_upper = {name.upper(): name for name in self._markets}
+        for candidate in candidates:
+            if candidate in by_upper:
+                resolved = by_upper[candidate]
+                log.info("phoenix: resolved symbol %r -> %r", symbol, resolved)
+                self._markets[symbol] = self._markets[resolved]
+                return resolved
+        known = ", ".join(sorted(self._markets)) or "<none>"
+        raise OrderRejected(
+            "phoenix", f"unknown symbol {symbol!r}; known markets: {known}"
+        )
+
+    async def market(self, symbol: str) -> dict:
+        resolved = await self.canonical_symbol(symbol)
+        return self._markets[resolved]
 
     async def stats_latest(self, symbol: str) -> dict:
         """{symbol, mark_price, oracle_price, current_funding_rate,
         eight_hour_funding_rate, annualized_funding_rate, ...}"""
-        return await self._get(f"/v1/market/{symbol}/stats/latest")
+        resolved = await self.canonical_symbol(symbol)
+        return await self._get(f"/v1/market/{resolved}/stats/latest")
 
     async def orderbook(self, symbol: str) -> dict:
         """{slot, symbol, bids: [[price, size], ...], asks: [[price, size], ...]}"""
-        return await self._get(f"/v1/view/orderbook/{symbol}")
+        resolved = await self.canonical_symbol(symbol)
+        return await self._get(f"/v1/view/orderbook/{resolved}")
 
 
 class PhoenixTradingClient:

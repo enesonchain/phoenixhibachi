@@ -116,7 +116,7 @@ async def test_funding_interval_falls_back_when_history_unavailable():
     )
     venue = make_venue()
     funding = await venue.get_funding("BTC/USDT-P")
-    assert funding.interval_hours == 8  # configured fallback
+    assert funding.interval_hours == 1  # configured fallback
     await venue.close()
 
 

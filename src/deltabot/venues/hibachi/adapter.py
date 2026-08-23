@@ -23,13 +23,12 @@ from deltabot.venues.hibachi.client import HibachiClient
 
 log = logging.getLogger(__name__)
 
-# Hibachi settles funding every 8 hours at 00:00/08:00/16:00 UTC (per
-# docs.hibachi.xyz; confirmed by settlement timestamps on 8h boundaries in
-# /market/data/funding-rates). The estimate from /market/data/prices is the
-# rate for the next settlement. The adapter additionally infers the actual
-# interval from settlement history at runtime, so a venue-side change to the
-# cadence corrects itself; this constant is only the fallback.
-DEFAULT_FUNDING_INTERVAL_HOURS = Decimal(8)
+# Fallback only: the adapter infers the actual settlement cadence from
+# consecutive timestamps in /market/data/funding-rates at runtime. Hibachi's
+# docs historically described 8h settlement (00:00/08:00/16:00 UTC) but live
+# settlement history has shown hourly spacing — the runtime inference is the
+# authority, and this constant only applies when history is unavailable.
+DEFAULT_FUNDING_INTERVAL_HOURS = Decimal(1)
 
 _STATUS_MAP = {
     "PENDING": OrderStatus.PENDING,

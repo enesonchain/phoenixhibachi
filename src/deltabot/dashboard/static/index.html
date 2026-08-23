@@ -231,6 +231,7 @@ const $ = id => document.getElementById(id);
 const fmt = {
   pct: v => v == null ? "–" : (v * 100).toFixed(2) + "%",
   pctSigned: v => v == null ? "–" : (v >= 0 ? "+" : "") + (v * 100).toFixed(2) + "%",
+  bps: v => v == null ? "–" : (v >= 0 ? "+" : "") + (v * 10000).toFixed(2) + " bps",
   usd: v => v == null ? "–" : "$" + Number(v).toLocaleString("en-US", {maximumFractionDigits: 2}),
   usdSigned: v => v == null ? "–" : (v >= 0 ? "+$" : "−$") + Math.abs(v).toLocaleString("en-US", {maximumFractionDigits: 2}),
   num: (v, d=6) => v == null ? "–" : Number(v).toLocaleString("en-US", {maximumFractionDigits: d}),
@@ -345,7 +346,7 @@ function renderVenues(s) {
     el.innerHTML = `
       <h2>${esc(name)} <small>· ${esc(v.symbol || "")}</small></h2>
       <table class="kv">
-        <tr><td>Funding (per ${fmt.num(v.interval_hours,2)}h)</td><td>${fmt.pctSigned(v.funding_rate)}</td></tr>
+        <tr><td>Funding (per ${fmt.num(v.interval_hours,2)}h)</td><td>${fmt.bps(v.funding_rate)}</td></tr>
         <tr><td>Funding APR</td><td>${fmt.pctSigned(v.annualized)}</td></tr>
         <tr><td>Mark</td><td>${fmt.usd(v.mark)}</td></tr>
         <tr><td>Bid / Ask</td><td>${fmt.num(v.bid,2)} / ${fmt.num(v.ask,2)} <span style="color:var(--ink-3)">(${fmt.num(v.book_spread_bps,1)} bps)</span></td></tr>

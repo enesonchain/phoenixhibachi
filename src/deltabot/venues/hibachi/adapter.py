@@ -144,9 +144,13 @@ class HibachiVenue(PerpVenue):
 
     async def get_balance(self) -> Balance:
         info = await self.client.account_info()
-        equity = Decimal(str(info["balance"]))
-        # Free collateral: equity minus margin already consumed by positions and
-        # resting orders. maximalWithdraw is the venue's own number for this.
+        # "balance" is settled cash; add unrealized PnL so equity reflects the
+        # account's true liquidation-relevant value.
+        equity = Decimal(str(info["balance"])) + Decimal(
+            str(info.get("totalUnrealizedPnl", "0"))
+        )
+        # Free collateral: maximalWithdraw is the venue's own number for what
+        # is not consumed by position/order margin.
         available = Decimal(str(info.get("maximalWithdraw", equity)))
         return Balance(venue=self.name, equity=equity, available=available)
 

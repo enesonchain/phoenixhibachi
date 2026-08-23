@@ -97,8 +97,18 @@ class PaperVenue(PerpVenue):
         signed = request.qty * request.side.sign
 
         current = self._qty.get(request.symbol, Decimal(0))
-        if request.reduce_only and (current == 0 or current * signed > 0):
-            raise OrderRejected(self.name, "reduce-only order would increase position")
+        if request.reduce_only:
+            if current == 0 or current * signed > 0:
+                raise OrderRejected(self.name, "reduce-only order would increase position")
+            # Real venues clamp reduce-only size to the open position; a
+            # reduce-only order must never flip through zero.
+            if abs(signed) > abs(current):
+                signed = -current
+                request = OrderRequest(
+                    symbol=request.symbol, side=request.side, qty=abs(signed),
+                    order_type=request.order_type, price=request.price,
+                    reduce_only=True, client_tag=request.client_tag,
+                )
 
         fee = request.qty * price * self.taker_fee_bps / Decimal(10_000)
         self.cash -= fee

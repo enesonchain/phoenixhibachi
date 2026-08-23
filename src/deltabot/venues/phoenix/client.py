@@ -220,19 +220,26 @@ class PhoenixTradingClient:
         self,
         symbol: str,
         side: str,  # "buy" | "sell"
-        quantity: Decimal,
+        quantity: Decimal | None = None,
+        num_base_lots: int | None = None,
         reduce_only: bool = False,
         transfer_amount_atoms: int | None = None,
         max_price_in_ticks: int | None = None,
     ) -> str:
         """Build (server-side), sign (locally), and submit an isolated market
-        order. Returns the transaction signature."""
+        order. Prefer ``num_base_lots`` (exact integer); ``quantity`` (base
+        units) is the float fallback. Returns the transaction signature."""
         request: dict[str, Any] = {
             "authority": self.authority,
             "symbol": symbol,
             "side": side,
-            "quantity": float(quantity),
         }
+        if num_base_lots is not None:
+            request["numBaseLots"] = int(num_base_lots)
+        elif quantity is not None:
+            request["quantity"] = float(quantity)
+        else:
+            raise OrderRejected("phoenix", "order needs quantity or num_base_lots")
         if reduce_only:
             request["isReduceOnly"] = True
         if transfer_amount_atoms is not None:
@@ -256,9 +263,23 @@ class PhoenixTradingClient:
             )
         except httpx.HTTPError as e:
             raise VenueUnavailable("phoenix", f"rpc {method}: {e}") from e
-        body = response.json()
+        if response.status_code >= 400:
+            raise VenueUnavailable(
+                "phoenix", f"rpc {method} -> {response.status_code}: {response.text[:200]}"
+            )
+        try:
+            body = response.json()
+        except ValueError as e:
+            raise VenueUnavailable("phoenix", f"rpc {method}: non-JSON response") from e
         if "error" in body:
-            raise OrderRejected("phoenix", f"rpc {method} error: {body['error']}")
+            error = body["error"]
+            # JSON-RPC errors: only a preflight simulation failure means the
+            # transaction definitively did not land; transport/node errors are
+            # retryable-unavailable, not rejections.
+            message = str(error)
+            if "Transaction simulation failed" in message or "InstructionError" in message:
+                raise OrderRejected("phoenix", f"rpc {method} error: {message[:300]}")
+            raise VenueUnavailable("phoenix", f"rpc {method} error: {message[:300]}")
         return body["result"]
 
     async def _sign_and_send(self, api_instructions: list[dict]) -> str:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import enum
 import json
+import logging
 import os
 import tempfile
 import time
@@ -55,7 +56,21 @@ class StateStore:
     def load(self) -> BotState:
         if not self.path.exists():
             return BotState()
-        data = json.loads(self.path.read_text())
+        try:
+            data = json.loads(self.path.read_text())
+        except (json.JSONDecodeError, OSError):
+            # A corrupt state file must not brick the bot: park the evidence
+            # and start fresh — the engine's reconcile pass re-discovers any
+            # live positions from the venues (adopt / flatten / halt).
+            backup = self.path.with_suffix(f".corrupt-{int(time.time())}")
+            try:
+                os.replace(self.path, backup)
+            except OSError:
+                pass
+            logging.getLogger(__name__).error(
+                "state file was corrupt; moved to %s and starting fresh", backup
+            )
+            return BotState()
         pair = None
         if data.get("pair"):
             p = data["pair"]
@@ -93,6 +108,8 @@ class StateStore:
         try:
             with os.fdopen(fd, "w") as f:
                 json.dump(payload, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, self.path)
         except BaseException:
             try:

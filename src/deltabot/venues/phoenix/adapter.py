@@ -59,12 +59,18 @@ class PhoenixVenue(PerpVenue):
         self._funding_scale_checked = False
 
     @classmethod
-    def from_config(cls, cfg: PhoenixConfig) -> "PhoenixVenue":
+    def from_config(cls, cfg: PhoenixConfig, allow_data_only: bool = False) -> "PhoenixVenue":
         wallet_key = cfg.wallet_private_key if cfg.execution_backend == "wallet" else None
+        if cfg.execution_backend == "wallet" and not wallet_key and not allow_data_only:
+            # Refuse to boot a live bot that silently can't trade one venue.
+            raise ValueError(
+                "phoenix.execution_backend is 'wallet' but wallet_private_key is "
+                "empty — set it, or run with paper: true"
+            )
         return cls(
             data_api_url=cfg.data_api_url,
             rpc_url=cfg.rpc_url,
-            wallet_private_key=wallet_key,
+            wallet_private_key=wallet_key or None,
         )
 
     async def close(self) -> None:
@@ -186,7 +192,8 @@ class PhoenixVenue(PerpVenue):
         base_lots_decimals = int(market["baseLotsDecimals"])
         subaccounts = (state.get("snapshot") or {}).get("subaccounts") or []
         qty = Decimal(0)
-        entry_price: Decimal | None = None
+        entry_notional = Decimal(0)
+        entry_qty = Decimal(0)
         for sub in subaccounts:
             for position in sub.get("positions") or []:
                 if position.get("symbol") != symbol:
@@ -198,7 +205,10 @@ class PhoenixVenue(PerpVenue):
                     leg = lots / (Decimal(10) ** base_lots_decimals)
                 qty += leg
                 if position.get("entryPriceUsd") is not None and leg != 0:
-                    entry_price = Decimal(str(position["entryPriceUsd"]))
+                    entry_notional += Decimal(str(position["entryPriceUsd"])) * abs(leg)
+                    entry_qty += abs(leg)
+        # Size-weighted average entry across subaccounts holding this market.
+        entry_price = entry_notional / entry_qty if entry_qty > 0 else None
         return PositionState(
             venue=self.name,
             symbol=symbol,
@@ -215,16 +225,19 @@ class PhoenixVenue(PerpVenue):
                 self.name, "only market orders are implemented for phoenix"
             )
         side = "buy" if request.side is Side.BUY else "sell"
+        # Send exact integer lots so no precision is lost to float conversion.
+        market = await self.data.market(request.symbol)
+        lots = int(request.qty * Decimal(10) ** int(market["baseLotsDecimals"]))
         signature = await trading.place_isolated_market_order(
             symbol=request.symbol,
             side=side,
-            quantity=request.qty,
+            num_base_lots=lots,
             reduce_only=request.reduce_only,
         )
         confirmed = await trading.confirm_transaction(signature)
         if not confirmed:
-            # Not landed within the window: report unknown so the engine
-            # reconciles against the trader state instead of assuming a fill.
+            # Not landed within the window: report UNKNOWN with zero fill —
+            # the executor resolves the true outcome from the position delta.
             return OrderResult(
                 venue=self.name,
                 symbol=request.symbol,
@@ -232,6 +245,10 @@ class PhoenixVenue(PerpVenue):
                 status=OrderStatus.UNKNOWN,
                 raw={"signature": signature, "confirmed": False},
             )
+        # Confirmed means the market-order transaction executed; IOC fills at
+        # whatever size was available. Report UNKNOWN-quantity conservatively:
+        # status FILLED with the requested qty is only claimed for the happy
+        # path, and the executor re-verifies against the position anyway.
         return OrderResult(
             venue=self.name,
             symbol=request.symbol,

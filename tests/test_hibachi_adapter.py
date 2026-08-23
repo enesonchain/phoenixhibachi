@@ -251,6 +251,7 @@ async def test_position_parsing_short_direction():
     assert position.unrealized_pnl == Decimal("-498.5")
 
     balance = await venue.get_balance()
-    assert balance.equity == Decimal("5000.0")
+    # equity = settled balance + unrealized PnL (5000 - 498.5)
+    assert balance.equity == Decimal("4501.5")
     assert balance.available == Decimal("4200.0")
     await venue.close()

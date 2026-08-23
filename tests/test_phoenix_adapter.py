@@ -206,7 +206,9 @@ async def test_wallet_order_flow_signs_and_sends(keypair_b58):
     # order request body: correct authority and side, auth header attached
     order_request = json.loads(ix_route.calls[0].request.content)
     assert order_request["side"] == "buy"
-    assert order_request["quantity"] == 0.001
+    # exact integer lots: 0.001 base units at 5 baseLotsDecimals -> 100 lots
+    assert order_request["numBaseLots"] == 100
+    assert "quantity" not in order_request
     Pubkey.from_string(order_request["authority"])  # valid pubkey
     assert ix_route.calls[0].request.headers["Authorization"] == "Bearer jwt-token"
 

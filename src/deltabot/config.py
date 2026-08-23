@@ -47,10 +47,8 @@ class HibachiConfig:
 class PhoenixConfig:
     symbol: str = "BTC-PERP"
     data_api_url: str = "https://perp-api.phoenix.trade"
-    ws_url: str | None = None
-    funding_interval_hours: Decimal = Decimal(1)
     # Execution backend: "wallet" signs Solana transactions locally;
-    # "unsupported" runs Phoenix as data-only (bot refuses live entry).
+    # "data-only" serves market data only (paper mode works fully).
     execution_backend: str = "wallet"
     rpc_url: str | None = None
     wallet_private_key: str | None = None  # base58 Solana keypair, wallet backend only
@@ -103,8 +101,7 @@ def load_config(path: str | Path) -> BotConfig:
     h = _decimals(raw["hibachi"], ("max_fees_percent", "funding_interval_hours"))
     hibachi = HibachiConfig(**{**h, "account_id": int(h["account_id"])})
 
-    p = _decimals(raw.get("phoenix", {}), ("funding_interval_hours",))
-    phoenix = PhoenixConfig(**p)
+    phoenix = PhoenixConfig(**raw.get("phoenix", {}))
 
     s = _decimals(
         raw.get("strategy", {}),

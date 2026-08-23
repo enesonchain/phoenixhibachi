@@ -37,7 +37,7 @@ def build_venues(cfg: BotConfig) -> tuple[PerpVenue, PerpVenue, dict[str, str]]:
         max_fees_percent=cfg.hibachi.max_fees_percent,
         funding_interval_hours=cfg.hibachi.funding_interval_hours,
     )
-    phoenix: PerpVenue = PhoenixVenue.from_config(cfg.phoenix)
+    phoenix: PerpVenue = PhoenixVenue.from_config(cfg.phoenix, allow_data_only=cfg.paper)
     if cfg.paper:
         # Taker fees: Hibachi default 4.5 bps, Phoenix 3.5 bps.
         from decimal import Decimal
@@ -50,7 +50,25 @@ def build_venues(cfg: BotConfig) -> tuple[PerpVenue, PerpVenue, dict[str, str]]:
     return hibachi, phoenix, symbols
 
 
+def _acquire_instance_lock(cfg: BotConfig):
+    """One bot process per state file: two engines trading the same accounts
+    would double positions. Returns the held lock file object."""
+    import fcntl
+
+    lock_path = cfg.state_path.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit(
+            f"another bot instance already holds {lock_path}; refusing to start"
+        ) from None
+    return lock_file
+
+
 async def cmd_run(cfg: BotConfig) -> int:
+    lock = _acquire_instance_lock(cfg)
     hibachi, phoenix, symbols = build_venues(cfg)
     engine = Engine(hibachi, phoenix, symbols, cfg.strategy, StateStore(cfg.state_path))
     if cfg.paper:
@@ -60,6 +78,7 @@ async def cmd_run(cfg: BotConfig) -> int:
     finally:
         await hibachi.close()
         await phoenix.close()
+        lock.close()
     return 1 if engine.state.halt_reason else 0
 
 
@@ -91,6 +110,12 @@ async def cmd_status(cfg: BotConfig) -> int:
 
 
 async def cmd_close(cfg: BotConfig) -> int:
+    if cfg.paper:
+        print(
+            "paper mode: simulated positions live only inside a running bot "
+            "process — nothing to close. Set paper: false to close real positions."
+        )
+        return 0
     hibachi, phoenix, symbols = build_venues(cfg)
     try:
         executor = PairExecutor(

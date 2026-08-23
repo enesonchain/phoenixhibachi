@@ -42,8 +42,10 @@ def check_entry(
                 f"{venue}: book spread {book.spread_bps:.1f}bps > {cfg.max_book_spread_bps}bps"
             )
 
-    marks = [f.mark_price for f in fundings.values() if f.mark_price > 0]
-    if len(marks) == 2 and min(marks) > 0:
+    marks = [f.mark_price for f in fundings.values()]
+    if any(m <= 0 for m in marks):
+        reasons.append("a venue reports a non-positive mark price")
+    elif len(marks) == 2:
         divergence = abs(marks[0] - marks[1]) / min(marks)
         if divergence > cfg.max_mark_divergence:
             reasons.append(f"mark divergence {divergence:.4f} > {cfg.max_mark_divergence}")
@@ -76,9 +78,18 @@ def size_pair(
         notional = min(notional, usable)
 
     qty = notional / mark
-    # Round down to every venue's step so both legs can hold the same quantity.
-    for spec in specs.values():
-        qty = spec.round_qty(qty)
+    # Both legs must hold the exact same quantity, so it must sit on both
+    # venues' step grids. Rounding down to the coarser step guarantees this
+    # only when the coarse step is a whole multiple of the fine one — check.
+    steps = sorted((s.step_size for s in specs.values() if s.step_size > 0), reverse=True)
+    if steps:
+        coarse, fine = steps[0], steps[-1]
+        if fine > 0 and (coarse % fine) != 0:
+            return Decimal(0), (
+                f"venue step sizes {coarse} and {fine} are incompatible "
+                "(no common grid); refusing to size a matched pair"
+            )
+        qty = (qty // coarse) * coarse
     if qty <= 0:
         return Decimal(0), "quantity rounds to zero at venue step size"
 

@@ -94,7 +94,10 @@ class HibachiSigner:
         try:
             key_bytes = bytes.fromhex(key)
             self._ecdsa = eth_keys.datatypes.PrivateKey(key_bytes)
-        except ValueError:
+        except Exception:
+            # Not a valid 32-byte secp256k1 key (bytes.fromhex raises
+            # ValueError; eth_keys raises its own ValidationError on hex of
+            # the wrong length) -> treat as a web-account HMAC secret.
             self._hmac_secret = key
 
     def sign(self, payload: bytes) -> str:

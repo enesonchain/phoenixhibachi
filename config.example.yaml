@@ -29,7 +29,7 @@ phoenix:
   symbol: BTC-PERP
   data_api_url: https://perp-api.phoenix.trade
   # "wallet" = live trading (requires an onboarded phoenix.trade account and
-  # the keys below). "unsupported" = data-only; paper mode still works fully.
+  # the keys below). "data-only" = market data only; paper mode works fully.
   execution_backend: wallet
   # Any Solana mainnet RPC; a private endpoint (Helius/Triton/QuickNode) is
   # strongly recommended over the public one for order latency.

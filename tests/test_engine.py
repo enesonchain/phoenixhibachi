@@ -105,10 +105,28 @@ async def test_missing_leg_triggers_emergency_flatten(tmp_path):
     await engine.tick()
     assert engine.state.phase is Phase.OPEN
     hibachi.qty = Decimal(0)  # simulate liquidation of the short leg
+    # first observation: engine waits for confirmation (indexer-lag guard)
+    await engine.tick()
+    assert engine.state.phase is Phase.OPEN
+    assert phoenix.qty > 0  # survivor untouched after a single stale read
+    # second consecutive observation: emergency flatten fires
     await engine.tick()
     assert engine.state.phase is Phase.FLAT
     assert phoenix.qty == 0  # survivor closed
     assert engine.state.incidents
+
+
+async def test_missing_leg_single_blip_does_not_flatten(tmp_path):
+    engine, hibachi, phoenix = make_engine(tmp_path)
+    await engine.tick()
+    assert engine.state.phase is Phase.OPEN
+    real_qty = hibachi.qty
+    hibachi.qty = Decimal(0)  # stale read
+    await engine.tick()
+    hibachi.qty = real_qty  # indexer caught up
+    await engine.tick()
+    assert engine.state.phase is Phase.OPEN
+    assert phoenix.qty > 0 and hibachi.qty < 0  # pair intact
 
 
 async def test_restart_recovers_open_position(tmp_path):

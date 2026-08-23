@@ -43,6 +43,12 @@ def _now_us() -> int:
     return time.time_ns() // 1_000
 
 
+def _dec_str(value: Decimal) -> str:
+    """Plain decimal string, never exponent notation (2E-7 would be rejected
+    and would also diverge from the bytes that were signed)."""
+    return format(value, "f")
+
+
 class HibachiClient:
     """Thin wrapper over Hibachi's REST API with request signing."""
 
@@ -197,14 +203,14 @@ class HibachiClient:
             "accountId": self.account_id,
             "nonce": nonce,
             "symbol": symbol,
-            "quantity": str(quantity),
+            "quantity": _dec_str(quantity),
             "orderType": "MARKET" if price is None else "LIMIT",
             "side": "BID" if is_buy else "ASK",
-            "maxFeesPercent": str(max_fees_percent),
+            "maxFeesPercent": _dec_str(max_fees_percent),
             "signature": self._signer.sign(payload),
         }
         if price is not None:
-            request["price"] = str(price)
+            request["price"] = _dec_str(price)
         flags = [f for f, on in (
             ("REDUCE_ONLY", reduce_only), ("POST_ONLY", post_only), ("IOC", ioc)
         ) if on]

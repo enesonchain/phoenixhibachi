@@ -61,6 +61,16 @@
   button.danger.arm { background:var(--critical); color:#fff; }
   button.primary { background:var(--ink-1); color:var(--page); border-color:var(--ink-1); }
 
+  .decision {
+    display:flex; align-items:center; gap:8px;
+    font-size:12.5px; color:var(--ink-2); margin:-6px 0 14px;
+  }
+  .decision::before {
+    content:""; width:6px; height:6px; border-radius:50%;
+    background:var(--series-1); flex:none;
+  }
+  .decision:empty { display:none; }
+
   .banner {
     border:1px solid var(--critical); border-radius:10px; background:var(--surface);
     padding:10px 14px; margin-bottom:14px; display:flex; gap:10px; align-items:center;
@@ -140,8 +150,11 @@
   <div class="spacer"></div>
   <span class="updated" id="updated"></span>
   <button id="btn-pause"></button>
+  <button id="btn-enter" class="primary">Open pair now</button>
   <button id="btn-close" class="danger">Close position</button>
 </header>
+
+<div class="decision" id="decision"></div>
 
 <div id="banner-halt" class="banner hidden">
   ⛔ HALTED <span class="msg" id="halt-reason"></span>
@@ -227,7 +240,7 @@ const fmt = {
 };
 const esc = t => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-let lastStatus = null, lastReceived = 0, closeArmed = 0;
+let lastStatus = null, lastReceived = 0, closeArmed = 0, enterArmed = 0;
 
 /* ---------------------------------------------------------------- controls */
 async function post(path, body) {
@@ -249,6 +262,17 @@ $("btn-close").addEventListener("click", async () => {
   } else {
     closeArmed = Date.now(); btn.classList.add("arm"); btn.textContent = "Confirm close?";
     setTimeout(() => { if (Date.now() - closeArmed >= 4000) { btn.classList.remove("arm"); btn.textContent = "Close position"; } }, 4200);
+  }
+});
+$("btn-enter").addEventListener("click", async () => {
+  const btn = $("btn-enter");
+  if (Date.now() - enterArmed < 4000) {
+    enterArmed = 0; btn.textContent = "Open pair now";
+    await post("/api/control", {action:"enter"});
+    refresh();
+  } else {
+    enterArmed = Date.now(); btn.textContent = "Confirm open?";
+    setTimeout(() => { if (Date.now() - enterArmed >= 4000) btn.textContent = "Open pair now"; }, 4200);
   }
 });
 $("btn-clear-halt").addEventListener("click", async () => {
@@ -282,6 +306,8 @@ function render(s) {
 
   $("btn-pause").textContent = s.paused ? "Resume entries" : "Pause entries";
   $("btn-close").disabled = phase !== "OPEN";
+  $("btn-enter").disabled = phase !== "FLAT";
+  $("decision").textContent = s.decision || "";
 
   $("banner-halt").classList.toggle("hidden", phase !== "HALTED");
   $("halt-reason").textContent = s.halt_reason || "";

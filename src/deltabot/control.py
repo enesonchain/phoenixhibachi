@@ -26,6 +26,7 @@ class BotController:
 
     paused: bool = False
     _close_requested: bool = False
+    _enter_requested: bool = False
     _clear_halt_requested: bool = False
     _pending_config: dict[str, Decimal] = field(default_factory=dict)
 
@@ -40,6 +41,13 @@ class BotController:
 
     def consume_close_request(self) -> bool:
         requested, self._close_requested = self._close_requested, False
+        return requested
+
+    def request_enter(self) -> None:
+        self._enter_requested = True
+
+    def consume_enter_request(self) -> bool:
+        requested, self._enter_requested = self._enter_requested, False
         return requested
 
     def request_clear_halt(self) -> None:

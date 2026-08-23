@@ -54,6 +54,7 @@ class Engine:
         self._stray_streak = 0
         self._last_snapshot: dict | None = None
         self._last_error: str | None = None
+        self._decision: str = "starting up"
 
     # ------------------------------------------------------------- lifecycle
 
@@ -94,6 +95,9 @@ class Engine:
             self._last_snapshot = snapshot
             self._last_error = None
             await self._reconcile(snapshot["positions"])
+            force_enter = (
+                self.controller is not None and self.controller.consume_enter_request()
+            )
             if (
                 self.controller is not None
                 and self.controller.consume_close_request()
@@ -103,7 +107,7 @@ class Engine:
             elif self.state.phase is Phase.OPEN:
                 await self._manage_open(snapshot)
             elif self.state.phase is Phase.FLAT:
-                await self._consider_entry(snapshot)
+                await self._consider_entry(snapshot, force=force_enter)
         except VenueError as e:
             log.warning("tick skipped, venue unavailable: %s", e)
             self._last_error = str(e)
@@ -249,11 +253,17 @@ class Engine:
 
     # ---------------------------------------------------------------- entry
 
-    async def _consider_entry(self, snapshot: dict) -> None:
-        if self.controller is not None and self.controller.paused:
-            return
-        if time.time() < self.state.cooldown_until:
-            return
+    async def _consider_entry(self, snapshot: dict, force: bool = False) -> None:
+        """Evaluate entry. ``force`` (the dashboard's "Open pair now") skips
+        the pause/cooldown/threshold gates — never the risk or sizing gates."""
+        if not force:
+            if self.controller is not None and self.controller.paused:
+                self._decision = "entries paused from the dashboard"
+                return
+            if time.time() < self.state.cooldown_until:
+                remaining = int(self.state.cooldown_until - time.time())
+                self._decision = f"cooling down after an incident ({remaining}s left)"
+                return
 
         fundings: dict[str, FundingSnapshot] = snapshot["fundings"]
         names = list(fundings)
@@ -266,12 +276,17 @@ class Engine:
             spread.annualized_pct, spread.short_venue, spread.long_venue,
         )
 
-        if spread.annualized < self.cfg.entry_apr:
+        if not force and spread.annualized < self.cfg.entry_apr:
+            self._decision = (
+                f"waiting for entry: spread {spread.annualized_pct:.2f}% APR "
+                f"< {self.cfg.entry_apr * 100:.2f}% threshold"
+            )
             return
 
         verdict = check_entry(self.cfg, snapshot["books"], snapshot["balances"], fundings)
         if not verdict.ok:
             log.info("entry blocked by risk: %s", "; ".join(verdict.reasons))
+            self._decision = "entry blocked by risk: " + "; ".join(verdict.reasons)
             return
 
         specs = {}
@@ -281,8 +296,14 @@ class Engine:
         qty, refusal = size_pair(self.cfg, marks, snapshot["balances"], specs)
         if refusal:
             log.info("entry refused by sizing: %s", refusal)
+            self._decision = "entry refused by sizing: " + refusal
             return
 
+        self._decision = (
+            f"opening pair ({'manual' if force else 'signal'}): "
+            f"short {spread.short_venue} / long {spread.long_venue} "
+            f"@ {spread.annualized_pct:.2f}% APR"
+        )
         self.state.phase = Phase.ENTERING
         self.store.save(self.state)
         fill = await self.executor.open_pair(
@@ -298,6 +319,10 @@ class Engine:
         log.info(
             "pair OPEN: short %s / long %s qty=%s @ %.2f%% APR",
             spread.short_venue, spread.long_venue, fill.qty, spread.annualized_pct,
+        )
+        self._decision = (
+            f"holding: entered at {spread.annualized_pct:.2f}% APR "
+            f"(exits below {self.cfg.exit_apr * 100:.2f}%)"
         )
         await self._refresh_positions()
 
@@ -355,6 +380,11 @@ class Engine:
         )
         if carry < self.cfg.exit_apr:
             await self._exit(f"carry {carry * 100:.2f}% APR below exit threshold")
+        else:
+            self._decision = (
+                f"holding: carry {carry * 100:.2f}% APR "
+                f"(exits below {self.cfg.exit_apr * 100:.2f}%)"
+            )
 
     async def _exit(self, reason: str) -> None:
         pair = self.state.pair
@@ -368,6 +398,7 @@ class Engine:
         self.state.phase = Phase.FLAT
         self.state.pair = None
         log.info("pair closed: %s", reason)
+        self._decision = f"pair closed: {reason}"
         await self._refresh_positions()
 
     # ------------------------------------------------------------ dashboard
@@ -381,6 +412,11 @@ class Engine:
         status: dict = {
             "ts": time.time(),
             "phase": self.state.phase.value,
+            "decision": (
+                "halted: " + (self.state.halt_reason or "")
+                if self.state.phase is Phase.HALTED
+                else self._decision
+            ),
             "halt_reason": self.state.halt_reason,
             "cooldown_until": self.state.cooldown_until,
             "incidents": list(self.state.incidents[-20:]),

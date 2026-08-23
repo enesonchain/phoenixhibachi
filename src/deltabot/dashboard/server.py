@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-CONTROL_ACTIONS = ("pause", "resume", "close", "clear_halt")
+CONTROL_ACTIONS = ("pause", "resume", "close", "enter", "clear_halt")
 
 
 def create_app(controller: BotController) -> web.Application:
@@ -52,6 +52,8 @@ def create_app(controller: BotController) -> web.Application:
             controller.paused = False
         elif action == "close":
             controller.request_close()
+        elif action == "enter":
+            controller.request_enter()
         elif action == "clear_halt":
             controller.request_clear_halt()
         log.info("dashboard control: %s", action)

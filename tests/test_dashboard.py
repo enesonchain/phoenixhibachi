@@ -59,6 +59,48 @@ async def test_close_request_exits_pair(tmp_path):
     assert hibachi.qty == 0 and phoenix.qty == 0
 
 
+async def test_manual_enter_below_threshold(tmp_path):
+    """'Open pair now' forces entry even when the spread is under entry_apr —
+    while risk and sizing gates still apply."""
+    controller = BotController(paper=True, symbols=SYMBOLS)
+    # tiny spread: ~0.9% APR, far below the 10% entry threshold
+    engine, hibachi, phoenix = make_engine(tmp_path, controller, hib_rate="0.000001", phx_rate="0")
+    await engine.tick()
+    assert engine.state.phase is Phase.FLAT
+    assert "waiting for entry" in controller.status_payload()["decision"]
+
+    controller.request_enter()
+    await engine.tick()
+    assert engine.state.phase is Phase.OPEN
+    assert engine.state.pair.short_venue == "hibachi"
+    assert hibachi.qty < 0 and phoenix.qty > 0
+
+
+async def test_manual_enter_ignored_while_open(tmp_path):
+    controller = BotController(paper=True, symbols=SYMBOLS)
+    engine, hibachi, phoenix = make_engine(tmp_path, controller)
+    await engine.tick()
+    assert engine.state.phase is Phase.OPEN
+    qty_before = (hibachi.qty, phoenix.qty)
+    controller.request_enter()
+    await engine.tick()
+    assert (hibachi.qty, phoenix.qty) == qty_before  # no doubling
+    assert controller.consume_enter_request() is False  # flag was consumed
+
+
+async def test_decision_line_reflects_pause_and_hold(tmp_path):
+    controller = BotController(paper=True, symbols=SYMBOLS)
+    engine, hibachi, phoenix = make_engine(tmp_path, controller, hib_rate="0.000001")
+    controller.paused = True
+    await engine.tick()
+    assert "paused" in controller.status_payload()["decision"]
+    controller.paused = False
+    engine2, *_ = make_engine(tmp_path, controller)
+    await engine2.tick()  # enters
+    await engine2.tick()  # manages the open pair
+    assert "holding" in controller.status_payload()["decision"]
+
+
 async def test_clear_halt_resumes(tmp_path):
     controller = BotController(paper=True, symbols=SYMBOLS)
     engine, hibachi, phoenix = make_engine(tmp_path, controller)

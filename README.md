@@ -100,9 +100,15 @@ While `phxbot run` is up it serves a control panel at
   in, per-venue funding/mark/book/position/equity panels, open-position card
   with estimated accrued funding, KPI tiles (spread, carry, equity, net
   delta), and the incident log.
-- **Controls** — pause/resume entries, close the open pair (two-click
-  confirm), acknowledge-and-clear a HALT, and tune `entry_apr` / `exit_apr` /
-  notional caps live (applied on the next engine tick, no restart).
+- **Controls** — pause/resume entries, **Open pair now** (forces entry at the
+  current spread, two-click confirm; skips the threshold/cooldown gates but
+  never the risk and sizing checks — direction is always short-the-higher-
+  funding venue), close the open pair (two-click confirm),
+  acknowledge-and-clear a HALT, and tune `entry_apr` / `exit_apr` / notional
+  caps live (applied on the next engine tick, no restart).
+- **Decision line** — under the header the engine states what it's doing and
+  why, every tick: "waiting for entry: spread 6.2% < 10% threshold",
+  "holding: carry 32% APR", "entry blocked by risk: …", etc.
 - With the dashboard attached a HALT no longer exits the process — the bot
   idles frozen so you can inspect the reason and clear it from the UI.
 

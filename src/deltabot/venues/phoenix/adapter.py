@@ -111,21 +111,25 @@ class PhoenixVenue(PerpVenue):
         interval_s = Decimal(str(market.get("fundingIntervalSeconds") or 3600))
         interval_hours = interval_s / 3600
 
-        rate = Decimal(str(stats.get("current_funding_rate", "0")))
-        annualized_api = Decimal(str(stats.get("annualized_funding_rate", "0")))
+        # Live API evidence (Aug 2026): stats/latest reports funding in
+        # PERCENT (current_funding_rate 0.0027 == 0.0027%/interval, annualized
+        # 23.6 == 23.6% APR) — sibling endpoints name the same figures
+        # "...Percentage". Convert to fractions; if the API ever switches to
+        # fractions this makes rates 100x too SMALL, which fails safe (the bot
+        # sees no spread and stays flat, rather than mis-sizing 100x).
+        rate = Decimal(str(stats.get("current_funding_rate", "0"))) / 100
+        annualized_api = Decimal(str(stats.get("annualized_funding_rate", "0"))) / 100
         # Absolute-magnitude guard: perp funding clamps are far below 5% per
-        # interval, so anything larger means we are reading percent as a
-        # fraction (or garbage) — refuse rather than trade on a 100x error.
+        # interval, so anything larger means the units changed upstream —
+        # refuse rather than trade on a 100x error.
         if abs(rate) > Decimal("0.05"):
             raise VenueError(
                 self.name,
                 f"implausible per-interval funding rate {rate}; "
                 "units changed upstream?",
             )
-        # Sanity: our own annualization from the per-interval rate should be
-        # within an order of magnitude of the API's number. A ~100x mismatch
-        # means a fraction-vs-percent scale change upstream — refuse to trade
-        # on it rather than mis-sizing by 100x.
+        # Internal consistency: our own annualization of the per-interval rate
+        # should be within an order of magnitude of the API's figure.
         if not self._funding_scale_checked and rate != 0 and annualized_api != 0:
             ours = rate * (SECONDS_PER_YEAR / interval_s)
             ratio = abs(ours / annualized_api)

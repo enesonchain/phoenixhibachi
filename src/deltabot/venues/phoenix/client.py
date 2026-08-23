@@ -65,6 +65,7 @@ class PhoenixDataClient:
     def __init__(self, base_url: str = DEFAULT_DATA_API_URL, timeout: float = 10.0):
         self._http = httpx.AsyncClient(base_url=base_url, timeout=timeout)
         self._markets: dict[str, dict] = {}
+        self._aliases: dict[str, str] = {}
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -84,11 +85,16 @@ class PhoenixDataClient:
 
         Phoenix has used both bare ("BTC") and suffixed ("BTC-PERP") names, so
         accept either spelling: exact match first, then case-insensitive, then
-        with "-PERP" stripped or appended.
+        with "-PERP" stripped or appended. The alias cache is kept separate
+        from the market map so the resolved (venue-native) name is always the
+        one returned and used in request paths.
         """
+        if symbol in self._aliases:
+            return self._aliases[symbol]
         if not self._markets:
             self._markets = {m["symbol"]: m for m in await self.markets()}
         if symbol in self._markets:
+            self._aliases[symbol] = symbol
             return symbol
         upper = symbol.upper()
         candidates = [upper]
@@ -101,7 +107,7 @@ class PhoenixDataClient:
             if candidate in by_upper:
                 resolved = by_upper[candidate]
                 log.info("phoenix: resolved symbol %r -> %r", symbol, resolved)
-                self._markets[symbol] = self._markets[resolved]
+                self._aliases[symbol] = resolved
                 return resolved
         known = ", ".join(sorted(self._markets)) or "<none>"
         raise OrderRejected(

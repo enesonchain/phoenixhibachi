@@ -49,9 +49,10 @@ STATS = {
     "open_interest": 120.5,
     "day_volume_usd": 1e7,
     "day_volume_base": 150.0,
-    "current_funding_rate": 0.0001,
-    "eight_hour_funding_rate": 0.0008,
-    "annualized_funding_rate": 0.876,
+    # Live wire semantics are PERCENT: 0.01%/hour -> 87.6% APR
+    "current_funding_rate": 0.01,
+    "eight_hour_funding_rate": 0.08,
+    "annualized_funding_rate": 87.6,
 }
 
 ORDERBOOK = {
@@ -109,7 +110,9 @@ async def test_funding_snapshot_hourly():
 @respx.mock
 async def test_funding_scale_mismatch_refuses():
     mock_data_routes(respx.mock)
-    bad_stats = dict(STATS, annualized_funding_rate=87.6)  # percent, not fraction
+    # annualized reported as a fraction while current stays percent: the
+    # internal-consistency check must refuse rather than trade on it
+    bad_stats = dict(STATS, annualized_funding_rate=0.876)
     respx.mock.get(f"{BASE}/v1/market/BTC-PERP/stats/latest").mock(
         return_value=httpx.Response(200, json=bad_stats)
     )

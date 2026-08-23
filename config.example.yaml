@@ -38,6 +38,13 @@ phoenix:
   # you onboarded on phoenix.trade. Fund it with USDC collateral there first.
   wallet_private_key: ${PHOENIX_WALLET_PRIVATE_KEY}
 
+# Local web control panel, served by the bot itself while `phxbot run` is up.
+# 127.0.0.1 only, on purpose: this port can pause the bot and close positions.
+dashboard:
+  enabled: true
+  host: 127.0.0.1
+  port: 8790
+
 strategy:
   # Enter when the net funding spread between venues exceeds this APR fraction
   # (0.10 = 10% annualized). Exit when carry drops below exit_apr (hysteresis).

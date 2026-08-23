@@ -80,10 +80,20 @@ class StrategyConfig:
 
 
 @dataclass
+class DashboardConfig:
+    enabled: bool = True
+    # 127.0.0.1 only, deliberately: this port can close positions. Put real
+    # auth in front before ever binding wider.
+    host: str = "127.0.0.1"
+    port: int = 8790
+
+
+@dataclass
 class BotConfig:
     hibachi: HibachiConfig
     phoenix: PhoenixConfig
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     state_path: Path = Path("state/bot_state.json")
     paper: bool = True
     paper_start_balance: Decimal = Decimal("10000")
@@ -113,10 +123,13 @@ def load_config(path: str | Path) -> BotConfig:
     )
     strategy = StrategyConfig(**s)
 
+    dashboard = DashboardConfig(**raw.get("dashboard", {}))
+
     return BotConfig(
         hibachi=hibachi,
         phoenix=phoenix,
         strategy=strategy,
+        dashboard=dashboard,
         state_path=Path(raw.get("state_path", "state/bot_state.json")),
         paper=bool(raw.get("paper", True)),
         paper_start_balance=Decimal(str(raw.get("paper_start_balance", "10000"))),

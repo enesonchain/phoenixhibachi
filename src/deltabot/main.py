@@ -70,12 +70,33 @@ def _acquire_instance_lock(cfg: BotConfig):
 async def cmd_run(cfg: BotConfig) -> int:
     lock = _acquire_instance_lock(cfg)
     hibachi, phoenix, symbols = build_venues(cfg)
-    engine = Engine(hibachi, phoenix, symbols, cfg.strategy, StateStore(cfg.state_path))
+
+    controller = None
+    dashboard_runner = None
+    if cfg.dashboard.enabled:
+        from deltabot.control import BotController
+        from deltabot.dashboard.server import start_dashboard
+
+        controller = BotController(paper=cfg.paper, symbols=symbols)
+        dashboard_runner = await start_dashboard(
+            controller, host=cfg.dashboard.host, port=cfg.dashboard.port
+        )
+        log.info(
+            "dashboard: http://%s:%d (local only — it can close positions)",
+            cfg.dashboard.host, cfg.dashboard.port,
+        )
+
+    engine = Engine(
+        hibachi, phoenix, symbols, cfg.strategy, StateStore(cfg.state_path),
+        controller=controller,
+    )
     if cfg.paper:
         log.info("PAPER MODE: live market data, simulated fills — no real orders")
     try:
         await engine.run_forever()
     finally:
+        if dashboard_runner is not None:
+            await dashboard_runner.cleanup()
         await hibachi.close()
         await phoenix.close()
         lock.close()

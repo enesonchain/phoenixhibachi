@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>phoenixhibachi</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface:#fcfcfb;
+    --ink-1:#0b0b0b; --ink-2:#52514e; --ink-3:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
+    --series-1:#2a78d6;
+    --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+    --delta-up:#006300; --delta-down:#d03b3b;
+    --wash:rgba(11,11,11,.045);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page:#0d0d0d; --surface:#1a1a19;
+      --ink-1:#ffffff; --ink-2:#c3c2b7; --ink-3:#898781;
+      --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,.10);
+      --series-1:#3987e5;
+      --delta-up:#0ca30c; --delta-down:#e66767;
+      --wash:rgba(255,255,255,.06);
+    }
+  }
+  * { box-sizing:border-box; margin:0; }
+  body {
+    background:var(--page); color:var(--ink-1);
+    font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+    padding:20px; max-width:1240px; margin:0 auto;
+  }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  h1 { font-size:17px; font-weight:650; letter-spacing:-.01em; }
+  h1 span { color:var(--ink-3); font-weight:500; }
+  .spacer { flex:1; }
+  .updated { color:var(--ink-3); font-size:12px; }
+
+  .pill {
+    display:inline-flex; align-items:center; gap:6px;
+    border:1px solid var(--border); border-radius:999px;
+    padding:3px 10px; font-size:12px; font-weight:600; color:var(--ink-2);
+    background:var(--surface);
+  }
+  .pill .dot { width:8px; height:8px; border-radius:50%; background:var(--ink-3); }
+  .pill.open  .dot { background:var(--good); }
+  .pill.busy  .dot { background:var(--warning); }
+  .pill.halted{ color:var(--critical); border-color:var(--critical); }
+  .pill.halted .dot { background:var(--critical); }
+
+  button {
+    font:inherit; font-size:13px; font-weight:600; cursor:pointer;
+    border:1px solid var(--border); border-radius:8px;
+    background:var(--surface); color:var(--ink-1); padding:6px 14px;
+  }
+  button:hover { background:var(--wash); }
+  button:disabled { opacity:.45; cursor:default; }
+  button.danger { color:var(--critical); border-color:var(--critical); }
+  button.danger.arm { background:var(--critical); color:#fff; }
+  button.primary { background:var(--ink-1); color:var(--page); border-color:var(--ink-1); }
+
+  .banner {
+    border:1px solid var(--critical); border-radius:10px; background:var(--surface);
+    padding:10px 14px; margin-bottom:14px; display:flex; gap:10px; align-items:center;
+    color:var(--critical); font-weight:600; font-size:13px;
+  }
+  .banner .msg { flex:1; color:var(--ink-1); font-weight:500; }
+  .banner.warn { border-color:var(--warning); color:var(--ink-1); }
+  .hidden { display:none !important; }
+
+  .grid { display:grid; gap:14px; }
+  .kpis { grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); margin-bottom:14px; }
+  .card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:14px 16px; min-width:0;
+  }
+  .kpi .label { font-size:12px; color:var(--ink-2); font-weight:600; }
+  .kpi .value { font-size:26px; font-weight:650; letter-spacing:-.01em; margin-top:4px; }
+  .kpi .sub { font-size:12px; color:var(--ink-3); margin-top:2px; min-height:1.2em; }
+  .kpi .value .unit { font-size:15px; color:var(--ink-3); font-weight:600; }
+
+  .row2 { grid-template-columns:1fr; margin-bottom:14px; }
+  .venues { grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); margin-bottom:14px; }
+  .bottom { grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }
+
+  .card h2 { font-size:13px; font-weight:650; color:var(--ink-1); margin-bottom:10px; }
+  .card h2 small { color:var(--ink-3); font-weight:500; }
+
+  table.kv { width:100%; border-collapse:collapse; }
+  table.kv td { padding:4px 0; font-size:13px; }
+  table.kv td:first-child { color:var(--ink-2); }
+  table.kv td:last-child { text-align:right; font-variant-numeric:tabular-nums; color:var(--ink-1); }
+  .chip {
+    display:inline-block; font-size:11px; font-weight:700; letter-spacing:.02em;
+    border-radius:6px; padding:1px 7px; border:1px solid var(--border); color:var(--ink-2);
+  }
+  .chip.long { color:var(--delta-up); border-color:var(--delta-up); }
+  .chip.short { color:var(--critical); border-color:var(--critical); }
+  .pos-up { color:var(--delta-up); } .pos-down { color:var(--delta-down); }
+
+  #chartwrap { position:relative; }
+  #chart { width:100%; height:240px; display:block; }
+  #tooltip {
+    position:absolute; pointer-events:none; background:var(--surface);
+    border:1px solid var(--border); border-radius:8px; padding:6px 10px;
+    font-size:12px; box-shadow:0 4px 14px rgba(0,0,0,.12); display:none; z-index:5;
+    white-space:nowrap;
+  }
+  #tooltip .t { color:var(--ink-3); }
+  #tooltip .v { font-weight:650; font-variant-numeric:tabular-nums; }
+
+  form.settings { display:grid; gap:8px; }
+  form.settings label { font-size:12px; color:var(--ink-2); font-weight:600; }
+  form.settings .field { display:flex; align-items:center; gap:8px; justify-content:space-between; }
+  form.settings input {
+    font:inherit; font-variant-numeric:tabular-nums; width:110px; text-align:right;
+    background:var(--page); color:var(--ink-1);
+    border:1px solid var(--border); border-radius:7px; padding:5px 8px;
+  }
+  form.settings .applied { color:var(--delta-up); font-size:12px; font-weight:600; min-height:1.2em; }
+
+  ul.incidents { list-style:none; max-height:220px; overflow-y:auto; }
+  ul.incidents li {
+    font-size:12px; color:var(--ink-2); padding:6px 0;
+    border-bottom:1px solid var(--grid);
+  }
+  ul.incidents li:last-child { border-bottom:none; }
+  ul.incidents .empty { color:var(--ink-3); border:none; }
+  footer { margin-top:18px; color:var(--ink-3); font-size:11.5px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>phoenixhibachi <span>· delta-neutral funding bot</span></h1>
+  <span id="phase" class="pill"><span class="dot"></span><span id="phase-label">connecting</span></span>
+  <span id="mode" class="pill hidden"></span>
+  <div class="spacer"></div>
+  <span class="updated" id="updated"></span>
+  <button id="btn-pause"></button>
+  <button id="btn-close" class="danger">Close position</button>
+</header>
+
+<div id="banner-halt" class="banner hidden">
+  ⛔ HALTED <span class="msg" id="halt-reason"></span>
+  <button id="btn-clear-halt" class="danger">Acknowledge &amp; resume</button>
+</div>
+<div id="banner-stale" class="banner warn hidden">
+  ⚠️ <span class="msg">No update from the bot for a while — is the process running?</span>
+</div>
+<div id="banner-error" class="banner warn hidden">
+  ⚠️ <span class="msg" id="error-msg"></span>
+</div>
+
+<div class="grid kpis">
+  <div class="card kpi">
+    <div class="label">Funding spread</div>
+    <div class="value" id="kpi-spread">–</div>
+    <div class="sub" id="kpi-spread-sub"></div>
+  </div>
+  <div class="card kpi">
+    <div class="label">Position carry</div>
+    <div class="value" id="kpi-carry">–</div>
+    <div class="sub" id="kpi-carry-sub"></div>
+  </div>
+  <div class="card kpi">
+    <div class="label">Total equity</div>
+    <div class="value" id="kpi-equity">–</div>
+    <div class="sub" id="kpi-equity-sub"></div>
+  </div>
+  <div class="card kpi">
+    <div class="label">Net delta</div>
+    <div class="value" id="kpi-delta">–</div>
+    <div class="sub">unhedged exposure, USD</div>
+  </div>
+</div>
+
+<div class="grid row2">
+  <div class="card">
+    <h2>Funding spread <small>· annualized, with entry / exit thresholds</small></h2>
+    <div id="chartwrap">
+      <svg id="chart" role="img" aria-label="Funding spread over time"></svg>
+      <div id="tooltip"></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid venues" id="venues"></div>
+
+<div class="grid bottom">
+  <div class="card">
+    <h2>Open position</h2>
+    <div id="position-body"><p style="color:var(--ink-3);font-size:13px">No open position.</p></div>
+  </div>
+  <div class="card">
+    <h2>Strategy settings <small>· applied on the next tick</small></h2>
+    <form class="settings" id="settings" autocomplete="off">
+      <div class="field"><label for="f-entry">Entry threshold (APR %)</label><input id="f-entry" inputmode="decimal"></div>
+      <div class="field"><label for="f-exit">Exit threshold (APR %)</label><input id="f-exit" inputmode="decimal"></div>
+      <div class="field"><label for="f-target">Target notional ($)</label><input id="f-target" inputmode="decimal"></div>
+      <div class="field"><label for="f-max">Max notional ($)</label><input id="f-max" inputmode="decimal"></div>
+      <div class="field"><span class="applied" id="settings-msg"></span><button type="submit" class="primary">Apply</button></div>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Incidents</h2>
+    <ul class="incidents" id="incidents"><li class="empty">None recorded.</li></ul>
+  </div>
+</div>
+
+<footer id="foot">Local control panel — served by the bot on localhost only. Anyone who can reach this port can close positions; keep it local.</footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const fmt = {
+  pct: v => v == null ? "–" : (v * 100).toFixed(2) + "%",
+  pctSigned: v => v == null ? "–" : (v >= 0 ? "+" : "") + (v * 100).toFixed(2) + "%",
+  usd: v => v == null ? "–" : "$" + Number(v).toLocaleString("en-US", {maximumFractionDigits: 2}),
+  usdSigned: v => v == null ? "–" : (v >= 0 ? "+$" : "−$") + Math.abs(v).toLocaleString("en-US", {maximumFractionDigits: 2}),
+  num: (v, d=6) => v == null ? "–" : Number(v).toLocaleString("en-US", {maximumFractionDigits: d}),
+  time: ts => new Date(ts * 1000).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}),
+  ago: s => s < 5 ? "just now" : s < 90 ? Math.round(s) + "s ago" : Math.round(s/60) + "m ago",
+  dur: s => s < 3600 ? Math.round(s/60) + "m" : (s/3600).toFixed(1) + "h",
+};
+const esc = t => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+let lastStatus = null, lastReceived = 0, closeArmed = 0;
+
+/* ---------------------------------------------------------------- controls */
+async function post(path, body) {
+  if (window.__DEMO__) return demoControl(path, body);
+  const res = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  return res.json();
+}
+$("btn-pause").addEventListener("click", async () => {
+  const paused = lastStatus && lastStatus.paused;
+  await post("/api/control", {action: paused ? "resume" : "pause"});
+  refresh();
+});
+$("btn-close").addEventListener("click", async () => {
+  const btn = $("btn-close");
+  if (Date.now() - closeArmed < 4000) {
+    closeArmed = 0; btn.classList.remove("arm"); btn.textContent = "Close position";
+    await post("/api/control", {action:"close"});
+    refresh();
+  } else {
+    closeArmed = Date.now(); btn.classList.add("arm"); btn.textContent = "Confirm close?";
+    setTimeout(() => { if (Date.now() - closeArmed >= 4000) { btn.classList.remove("arm"); btn.textContent = "Close position"; } }, 4200);
+  }
+});
+$("btn-clear-halt").addEventListener("click", async () => {
+  await post("/api/control", {action:"clear_halt"});
+  refresh();
+});
+$("settings").addEventListener("submit", async e => {
+  e.preventDefault();
+  const payload = {};
+  const read = (id, scale) => { const v = $(id).value.trim(); if (v !== "") payload[({ "f-entry":"entry_apr","f-exit":"exit_apr","f-target":"target_notional","f-max":"max_notional"})[id]] = String(Number(v) / scale); };
+  read("f-entry", 100); read("f-exit", 100); read("f-target", 1); read("f-max", 1);
+  const res = await post("/api/config", payload);
+  $("settings-msg").textContent = res.ok ? "Staged ✓" : "Rejected: " + JSON.stringify(res.errors);
+  setTimeout(() => $("settings-msg").textContent = "", 4000);
+});
+
+/* ------------------------------------------------------------------ render */
+function render(s) {
+  lastStatus = s;
+  const phasePill = $("phase"), label = $("phase-label");
+  phasePill.className = "pill";
+  const phase = s.phase || "…";
+  if (phase === "OPEN") phasePill.classList.add("open");
+  else if (phase === "ENTERING" || phase === "EXITING") phasePill.classList.add("busy");
+  else if (phase === "HALTED") phasePill.classList.add("halted");
+  label.textContent = phase + (s.paused && phase !== "HALTED" ? " · entries paused" : "");
+
+  const mode = $("mode");
+  mode.classList.remove("hidden");
+  mode.textContent = s.paper ? "PAPER" : "LIVE";
+
+  $("btn-pause").textContent = s.paused ? "Resume entries" : "Pause entries";
+  $("btn-close").disabled = phase !== "OPEN";
+
+  $("banner-halt").classList.toggle("hidden", phase !== "HALTED");
+  $("halt-reason").textContent = s.halt_reason || "";
+  $("banner-error").classList.toggle("hidden", !s.error);
+  $("error-msg").textContent = s.error ? "Venue issue on last tick: " + s.error : "";
+
+  const spread = s.spread || {};
+  $("kpi-spread").textContent = fmt.pct(spread.annualized);
+  $("kpi-spread-sub").textContent = spread.short_venue ? `short ${spread.short_venue} / long ${spread.long_venue}` : "";
+  $("kpi-carry").textContent = s.carry_apr == null ? "–" : fmt.pctSigned(s.carry_apr);
+  $("kpi-carry").className = "value " + (s.carry_apr == null ? "" : s.carry_apr >= 0 ? "pos-up" : "pos-down");
+  $("kpi-carry-sub").textContent = s.pair ? "current annualized carry" : "no open position";
+  $("kpi-equity").textContent = fmt.usd(s.total_equity);
+  $("kpi-equity-sub").textContent = venueEquitySub(s);
+  const nd = s.net_delta_usd;
+  $("kpi-delta").textContent = nd == null ? "–" : fmt.usdSigned(nd);
+
+  renderVenues(s);
+  renderPosition(s);
+  renderIncidents(s);
+  renderSettingsPlaceholders(s);
+  drawChart(s);
+}
+function venueEquitySub(s) {
+  const v = s.venues || {};
+  return Object.keys(v).map(n => `${n} ${fmt.usd(v[n].equity)}`).join(" · ");
+}
+function renderVenues(s) {
+  const wrap = $("venues"); wrap.innerHTML = "";
+  for (const [name, v] of Object.entries(s.venues || {})) {
+    const qty = v.position_qty || 0;
+    const side = qty > 0 ? "long" : qty < 0 ? "short" : null;
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML = `
+      <h2>${esc(name)} <small>· ${esc(v.symbol || "")}</small></h2>
+      <table class="kv">
+        <tr><td>Funding (per ${fmt.num(v.interval_hours,2)}h)</td><td>${fmt.pctSigned(v.funding_rate)}</td></tr>
+        <tr><td>Funding APR</td><td>${fmt.pctSigned(v.annualized)}</td></tr>
+        <tr><td>Mark</td><td>${fmt.usd(v.mark)}</td></tr>
+        <tr><td>Bid / Ask</td><td>${fmt.num(v.bid,2)} / ${fmt.num(v.ask,2)} <span style="color:var(--ink-3)">(${fmt.num(v.book_spread_bps,1)} bps)</span></td></tr>
+        <tr><td>Position</td><td>${side ? `<span class="chip ${side}">${side.toUpperCase()}</span> ` : ""}${fmt.num(Math.abs(qty))}</td></tr>
+        <tr><td>Entry price</td><td>${fmt.usd(v.entry_price)}</td></tr>
+        <tr><td>Unrealized PnL</td><td class="${v.unrealized_pnl > 0 ? "pos-up" : v.unrealized_pnl < 0 ? "pos-down" : ""}">${fmt.usdSigned(v.unrealized_pnl)}</td></tr>
+        <tr><td>Equity / free</td><td>${fmt.usd(v.equity)} / ${fmt.usd(v.available)}</td></tr>
+      </table>`;
+    wrap.appendChild(el);
+  }
+}
+function renderPosition(s) {
+  const body = $("position-body");
+  if (!s.pair) { body.innerHTML = `<p style="color:var(--ink-3);font-size:13px">No open position.</p>`; return; }
+  const p = s.pair;
+  const held = s.ts - (p.entry_ts || s.ts);
+  const notional = markOf(s, p.short_venue) * (p.qty || 0);
+  const accrued = s.carry_apr != null ? notional * s.carry_apr * (held / 31536000) : null;
+  body.innerHTML = `
+    <table class="kv">
+      <tr><td>Direction</td><td><span class="chip short">SHORT</span> ${esc(p.short_venue)} · <span class="chip long">LONG</span> ${esc(p.long_venue)}</td></tr>
+      <tr><td>Size (per leg)</td><td>${fmt.num(p.qty)}</td></tr>
+      <tr><td>Notional (per leg)</td><td>${fmt.usd(notional)}</td></tr>
+      <tr><td>Entry spread</td><td>${fmt.pct(p.entry_spread_apr)}</td></tr>
+      <tr><td>Held for</td><td>${fmt.dur(held)}</td></tr>
+      <tr><td>Est. funding accrued</td><td class="${accrued > 0 ? "pos-up" : accrued < 0 ? "pos-down" : ""}">${fmt.usdSigned(accrued)}</td></tr>
+    </table>`;
+}
+function markOf(s, venue) { const v = (s.venues || {})[venue]; return v && v.mark ? v.mark : 0; }
+function renderIncidents(s) {
+  const ul = $("incidents");
+  const items = (s.incidents || []).slice().reverse();
+  ul.innerHTML = items.length
+    ? items.map(t => `<li>${esc(t)}</li>`).join("")
+    : `<li class="empty">None recorded.</li>`;
+}
+let settingsTouched = false;
+["f-entry","f-exit","f-target","f-max"].forEach(id => $(id).addEventListener("input", () => settingsTouched = true));
+function renderSettingsPlaceholders(s) {
+  if (settingsTouched || !s.config) return;
+  const c = s.config;
+  const set = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; };
+  set("f-entry", c.entry_apr != null ? (c.entry_apr * 100).toFixed(2) : "");
+  set("f-exit", c.exit_apr != null ? (c.exit_apr * 100).toFixed(2) : "");
+  set("f-target", c.target_notional != null ? c.target_notional : "");
+  set("f-max", c.max_notional != null ? c.max_notional : "");
+}
+
+/* ------------------------------------------------------------------- chart */
+function drawChart(s) {
+  const svg = $("chart"), wrap = $("chartwrap"), tip = $("tooltip");
+  const W = wrap.clientWidth || 800, H = 240;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const pts = (s.history || []).filter(p => p.spread_apr != null);
+  const P = {l: 48, r: 64, t: 12, b: 24};
+  if (pts.length < 2) {
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" fill="var(--ink-3)" font-size="13">Collecting data…</text>`;
+    return;
+  }
+  const entry = s.config ? s.config.entry_apr : null, exit = s.config ? s.config.exit_apr : null;
+  const ys = pts.map(p => p.spread_apr).concat(entry != null ? [entry] : [], exit != null ? [exit] : [], [0]);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const pad = Math.max((y1 - y0) * 0.12, 0.005);
+  // pad the top always; pad the bottom only into territory the data occupies
+  // (never invent a negative region when everything is >= 0)
+  y1 += pad;
+  y0 = y0 < 0 ? y0 - pad : Math.max(0, y0 - pad);
+  const x0 = pts[0].ts, x1 = pts[pts.length-1].ts;
+  const X = t => P.l + (W - P.l - P.r) * (t - x0) / Math.max(x1 - x0, 1);
+  const Y = v => P.t + (H - P.t - P.b) * (1 - (v - y0) / (y1 - y0));
+
+  let out = "";
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const v = y0 + (y1 - y0) * i / ticks, y = Y(v);
+    out += `<line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>`;
+    out += `<text x="${P.l-8}" y="${y+4}" text-anchor="end" fill="var(--ink-3)" font-size="11" style="font-variant-numeric:tabular-nums">${(v*100).toFixed(1)}%</text>`;
+  }
+  const nx = 5;
+  for (let i = 0; i <= nx; i++) {
+    const t = x0 + (x1 - x0) * i / nx;
+    out += `<text x="${X(t)}" y="${H-6}" text-anchor="middle" fill="var(--ink-3)" font-size="11">${fmt.time(t)}</text>`;
+  }
+  out += `<line x1="${P.l}" y1="${H-P.b}" x2="${W-P.r}" y2="${H-P.b}" stroke="var(--baseline)" stroke-width="1"/>`;
+  const refline = (v, name) => {
+    if (v == null || v < y0 || v > y1) return "";
+    const y = Y(v);
+    return `<line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="4 4"/>` +
+           `<text x="${W-P.r+6}" y="${y+4}" fill="var(--ink-3)" font-size="11">${name} ${(v*100).toFixed(0)}%</text>`;
+  };
+  out += refline(entry, "entry") + refline(exit, "exit");
+  const path = pts.map((p, i) => `${i ? "L" : "M"}${X(p.ts).toFixed(1)},${Y(p.spread_apr).toFixed(1)}`).join("");
+  out += `<path d="${path}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  out += `<g id="cross" style="display:none"><line id="cross-l" y1="${P.t}" y2="${H-P.b}" stroke="var(--baseline)" stroke-width="1"/><circle id="cross-c" r="4" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2"/></g>`;
+  out += `<rect id="hit" x="${P.l}" y="${P.t}" width="${W-P.l-P.r}" height="${H-P.t-P.b}" fill="transparent"/>`;
+  svg.innerHTML = out;
+
+  const hit = svg.querySelector("#hit"), cross = svg.querySelector("#cross");
+  const crossL = svg.querySelector("#cross-l"), crossC = svg.querySelector("#cross-c");
+  hit.addEventListener("mousemove", e => {
+    const rect = svg.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const t = x0 + (mx - P.l) / Math.max(W - P.l - P.r, 1) * (x1 - x0);
+    let best = pts[0];
+    for (const p of pts) if (Math.abs(p.ts - t) < Math.abs(best.ts - t)) best = p;
+    const bx = X(best.ts), by = Y(best.spread_apr);
+    cross.style.display = "";
+    crossL.setAttribute("x1", bx); crossL.setAttribute("x2", bx);
+    crossC.setAttribute("cx", bx); crossC.setAttribute("cy", by);
+    tip.style.display = "block";
+    tip.innerHTML = `<span class="t">${fmt.time(best.ts)}</span> · <span class="v">${(best.spread_apr*100).toFixed(2)}% APR</span>` +
+      (best.carry_apr != null ? `<br><span class="t">carry</span> <span class="v">${(best.carry_apr*100).toFixed(2)}%</span>` : "");
+    const wrapRect = wrap.getBoundingClientRect();
+    let left = bx / W * wrapRect.width + 12;
+    if (left + tip.offsetWidth > wrapRect.width - 8) left = bx / W * wrapRect.width - tip.offsetWidth - 12;
+    tip.style.left = left + "px";
+    tip.style.top = Math.max(by / H * wrapRect.height - tip.offsetHeight - 10, 0) + "px";
+  });
+  hit.addEventListener("mouseleave", () => { cross.style.display = "none"; tip.style.display = "none"; });
+}
+
+/* ------------------------------------------------------------------- loop */
+async function refresh() {
+  try {
+    const s = window.__DEMO__ ? demoStatus() : await (await fetch("/api/status")).json();
+    if (s && s.ts) { lastReceived = Date.now(); render(s); }
+  } catch (e) { /* transient; staleness banner covers it */ }
+  const stale = lastReceived && (Date.now() - lastReceived > 60000);
+  const fresh = lastStatus && lastStatus.ts && (Date.now()/1000 - lastStatus.ts < 90);
+  $("banner-stale").classList.toggle("hidden", !(stale || (lastReceived && !fresh)));
+  if (lastStatus && lastStatus.ts) $("updated").textContent = "updated " + fmt.ago(Date.now()/1000 - lastStatus.ts);
+}
+refresh();
+setInterval(refresh, 3000);
+window.addEventListener("resize", () => lastStatus && drawChart(lastStatus));
+</script>
+</body>
+</html>

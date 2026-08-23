@@ -42,6 +42,7 @@ class Engine:
         symbols: dict[str, str],
         cfg: StrategyConfig,
         store: StateStore,
+        controller=None,  # deltabot.control.BotController | None
     ):
         self.venues = {venue_a.name: venue_a, venue_b.name: venue_b}
         self.symbols = symbols
@@ -49,7 +50,10 @@ class Engine:
         self.store = store
         self.state: BotState = store.load()
         self.executor = PairExecutor(self.venues, symbols)
+        self.controller = controller
         self._stray_streak = 0
+        self._last_snapshot: dict | None = None
+        self._last_error: str | None = None
 
     # ------------------------------------------------------------- lifecycle
 
@@ -58,11 +62,15 @@ class Engine:
         while True:
             await self.tick()
             if self.state.phase is Phase.HALTED:
-                log.error(
-                    "engine HALTED: %s — fix, then delete/repair the state file",
-                    self.state.halt_reason,
-                )
-                return
+                if self.controller is None:
+                    log.error(
+                        "engine HALTED: %s — fix, then delete/repair the state file",
+                        self.state.halt_reason,
+                    )
+                    return
+                # With a dashboard attached, stay alive so the operator can
+                # inspect the halt and clear it; trading stays frozen.
+                log.error("engine HALTED (dashboard attached): %s", self.state.halt_reason)
             await asyncio.sleep(self.cfg.poll_interval_s)
 
     # ----------------------------------------------------------------- tick
@@ -72,14 +80,33 @@ class Engine:
         bot down, naked-leg failures and unknown errors halt it, and state is
         always persisted."""
         try:
+            if self.controller is not None:
+                self.controller.apply_pending_config(self.cfg)
+                if (
+                    self.state.phase is Phase.HALTED
+                    and self.controller.consume_clear_halt()
+                ):
+                    log.warning("halt cleared from dashboard; reconciling")
+                    self.state.record_incident("halt cleared via dashboard")
+                    self.state.phase = Phase.FLAT
+                    self.state.halt_reason = None
             snapshot = await self._observe()
+            self._last_snapshot = snapshot
+            self._last_error = None
             await self._reconcile(snapshot["positions"])
-            if self.state.phase is Phase.OPEN:
+            if (
+                self.controller is not None
+                and self.controller.consume_close_request()
+                and self.state.phase is Phase.OPEN
+            ):
+                await self._exit("manual close requested via dashboard")
+            elif self.state.phase is Phase.OPEN:
                 await self._manage_open(snapshot)
             elif self.state.phase is Phase.FLAT:
                 await self._consider_entry(snapshot)
         except VenueError as e:
             log.warning("tick skipped, venue unavailable: %s", e)
+            self._last_error = str(e)
         except NakedLegError as e:
             log.critical("naked-leg failure: %s", e)
             self.state.record_incident(str(e))
@@ -93,6 +120,28 @@ class Engine:
             self.state.halt_reason = "unexpected exception (see logs)"
         finally:
             self.store.save(self.state)
+            if self.controller is not None:
+                try:
+                    self.controller.publish(self._status_dict())
+                except Exception:
+                    log.exception("failed to publish dashboard status")
+
+    async def _refresh_positions(self) -> None:
+        """Re-read positions/balances into the last snapshot after an action
+        changed them, so the published status isn't a tick stale."""
+        if self._last_snapshot is None:
+            return
+        try:
+            names = list(self.venues)
+            results = await asyncio.gather(
+                *[self.venues[n].get_position(self.symbols[n]) for n in names],
+                *[self.venues[n].get_balance() for n in names],
+            )
+            k = len(names)
+            self._last_snapshot["positions"] = dict(zip(names, results[0:k]))
+            self._last_snapshot["balances"] = dict(zip(names, results[k : 2 * k]))
+        except VenueError as e:
+            log.debug("post-action position refresh skipped: %s", e)
 
     async def _observe(self) -> dict:
         names = list(self.venues)
@@ -201,6 +250,8 @@ class Engine:
     # ---------------------------------------------------------------- entry
 
     async def _consider_entry(self, snapshot: dict) -> None:
+        if self.controller is not None and self.controller.paused:
+            return
         if time.time() < self.state.cooldown_until:
             return
 
@@ -248,6 +299,7 @@ class Engine:
             "pair OPEN: short %s / long %s qty=%s @ %.2f%% APR",
             spread.short_venue, spread.long_venue, fill.qty, spread.annualized_pct,
         )
+        await self._refresh_positions()
 
     # ------------------------------------------------------------ open mgmt
 
@@ -316,6 +368,90 @@ class Engine:
         self.state.phase = Phase.FLAT
         self.state.pair = None
         log.info("pair closed: %s", reason)
+        await self._refresh_positions()
+
+    # ------------------------------------------------------------ dashboard
+
+    def _status_dict(self) -> dict:
+        """JSON-safe snapshot of everything the dashboard shows."""
+
+        def num(value):
+            return float(value) if value is not None else None
+
+        status: dict = {
+            "ts": time.time(),
+            "phase": self.state.phase.value,
+            "halt_reason": self.state.halt_reason,
+            "cooldown_until": self.state.cooldown_until,
+            "incidents": list(self.state.incidents[-20:]),
+            "error": self._last_error,
+            "config": {
+                "entry_apr": num(self.cfg.entry_apr),
+                "exit_apr": num(self.cfg.exit_apr),
+                "target_notional": num(self.cfg.target_notional),
+                "max_notional": num(self.cfg.max_notional),
+                "poll_interval_s": self.cfg.poll_interval_s,
+            },
+            "pair": None,
+            "venues": {},
+            "spread": None,
+            "carry_apr": None,
+            "total_equity": None,
+            "net_delta_usd": None,
+        }
+        pair = self.state.pair
+        if pair is not None:
+            status["pair"] = {
+                "short_venue": pair.short_venue,
+                "long_venue": pair.long_venue,
+                "qty": num(pair.qty),
+                "entry_spread_apr": num(pair.entry_spread_apr),
+                "entry_ts": pair.entry_ts,
+            }
+        snapshot = self._last_snapshot
+        if snapshot is None:
+            return status
+
+        fundings = snapshot["fundings"]
+        books = snapshot["books"]
+        positions = snapshot["positions"]
+        balances = snapshot["balances"]
+        for name in self.venues:
+            funding = fundings[name]
+            book = books[name]
+            position = positions[name]
+            balance = balances[name]
+            status["venues"][name] = {
+                "symbol": self.symbols[name],
+                "funding_rate": num(funding.rate),
+                "interval_hours": num(funding.interval_hours),
+                "annualized": num(funding.annualized),
+                "mark": num(funding.mark_price),
+                "bid": num(book.bid),
+                "ask": num(book.ask),
+                "book_spread_bps": num(book.spread_bps),
+                "position_qty": num(position.qty),
+                "entry_price": num(position.entry_price),
+                "unrealized_pnl": num(position.unrealized_pnl),
+                "equity": num(balance.equity),
+                "available": num(balance.available),
+            }
+        names = list(fundings)
+        spread = compute_spread(fundings[names[0]], fundings[names[1]])
+        status["spread"] = {
+            "annualized": num(spread.annualized),
+            "short_venue": spread.short_venue,
+            "long_venue": spread.long_venue,
+        }
+        if pair is not None:
+            status["carry_apr"] = num(
+                carry_of_position(pair.short_venue, fundings[names[0]], fundings[names[1]])
+            )
+        status["total_equity"] = sum(num(b.equity) or 0 for b in balances.values())
+        delta = sum((p.qty for p in positions.values()), Decimal(0))
+        mark = max((f.mark_price for f in fundings.values()), default=Decimal(0))
+        status["net_delta_usd"] = num(delta * mark)
+        return status
 
     # ------------------------------------------------------------ incidents
 

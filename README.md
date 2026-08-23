@@ -91,6 +91,25 @@ Start with `paper: true` (default): live market data, simulated fills, no
 keys needed for Phoenix. Watch the logged funding spread and simulated
 entries until you trust the behavior, then set `paper: false`.
 
+## Dashboard
+
+While `phxbot run` is up it serves a control panel at
+**http://127.0.0.1:8790** (configurable under `dashboard:`):
+
+- **Live view** — funding spread chart with your entry/exit thresholds drawn
+  in, per-venue funding/mark/book/position/equity panels, open-position card
+  with estimated accrued funding, KPI tiles (spread, carry, equity, net
+  delta), and the incident log.
+- **Controls** — pause/resume entries, close the open pair (two-click
+  confirm), acknowledge-and-clear a HALT, and tune `entry_apr` / `exit_apr` /
+  notional caps live (applied on the next engine tick, no restart).
+- With the dashboard attached a HALT no longer exits the process — the bot
+  idles frozen so you can inspect the reason and clear it from the UI.
+
+It binds to `127.0.0.1` deliberately: anyone who can reach this port can
+close positions. Don't expose it without putting real authentication in
+front (SSH tunnel to your server: `ssh -L 8790:127.0.0.1:8790 yourbox`).
+
 ## Strategy & risk controls
 
 Every `poll_interval_s` the engine snapshots funding, books, balances, and

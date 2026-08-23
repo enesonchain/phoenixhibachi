@@ -36,12 +36,26 @@ class OpenPair:
 
 
 @dataclass
+class FarmDay:
+    """Volume-farming counters for one UTC day."""
+
+    day: str = ""  # YYYY-MM-DD (UTC)
+    cycles: int = 0
+    volume_usd: dict = field(default_factory=dict)  # venue -> Decimal-as-str ok
+    fees_usd: Decimal = Decimal(0)
+
+    def total_volume(self) -> Decimal:
+        return sum((Decimal(str(v)) for v in self.volume_usd.values()), Decimal(0))
+
+
+@dataclass
 class BotState:
     phase: Phase = Phase.FLAT
     pair: OpenPair | None = None
     cooldown_until: float = 0.0
     halt_reason: str | None = None
     incidents: list[str] = field(default_factory=list)
+    farm: FarmDay = field(default_factory=FarmDay)
 
     def record_incident(self, message: str) -> None:
         self.incidents.append(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {message}")
@@ -81,12 +95,20 @@ class StateStore:
                 entry_spread_apr=Decimal(p["entry_spread_apr"]),
                 entry_ts=float(p.get("entry_ts", 0)),
             )
+        farm_data = data.get("farm") or {}
+        farm = FarmDay(
+            day=str(farm_data.get("day", "")),
+            cycles=int(farm_data.get("cycles", 0)),
+            volume_usd={k: Decimal(str(v)) for k, v in (farm_data.get("volume_usd") or {}).items()},
+            fees_usd=Decimal(str(farm_data.get("fees_usd", "0"))),
+        )
         return BotState(
             phase=Phase(data.get("phase", "FLAT")),
             pair=pair,
             cooldown_until=float(data.get("cooldown_until", 0)),
             halt_reason=data.get("halt_reason"),
             incidents=list(data.get("incidents", [])),
+            farm=farm,
         )
 
     def save(self, state: BotState) -> None:
@@ -102,6 +124,12 @@ class StateStore:
             "cooldown_until": state.cooldown_until,
             "halt_reason": state.halt_reason,
             "incidents": state.incidents,
+            "farm": {
+                "day": state.farm.day,
+                "cycles": state.farm.cycles,
+                "volume_usd": {k: str(v) for k, v in state.farm.volume_usd.items()},
+                "fees_usd": str(state.farm.fees_usd),
+            },
         }
         # atomic write so a crash mid-save can't corrupt the file
         fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".state-")

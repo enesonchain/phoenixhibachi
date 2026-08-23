@@ -80,6 +80,33 @@ class StrategyConfig:
 
 
 @dataclass
+class VolumeConfig:
+    """Volume-farming mode: cycle delta-neutral pairs to generate venue
+    volume at a controlled, budgeted cost."""
+
+    # "pair" = hedged cycles across both venues (near-zero price risk).
+    # "solo" = open+close on one venue only (seconds of directional exposure
+    # per cycle) — for farming a venue before the other one is available.
+    style: str = "pair"
+    solo_venue: str = "hibachi"
+    # Notional per cycle leg in USD.
+    cycle_notional: Decimal = Decimal("200")
+    # Hold the position this long before closing (some points programs
+    # weight held open interest; longer hold also looks less bot-like).
+    hold_s: float = 60.0
+    # Pause between cycles.
+    pause_s: float = 120.0
+    # Hard daily stops (UTC day): whichever hits first ends farming for the
+    # day. Fees are estimated from taker rates; budget them like a real cost.
+    daily_volume_target: Decimal = Decimal("50000")  # summed across venues
+    max_daily_fees: Decimal = Decimal("10")
+    # Taker fee estimates per venue (fraction), used for budget accounting.
+    taker_fee: dict = field(default_factory=lambda: {
+        "hibachi": Decimal("0.00045"), "phoenix": Decimal("0.00035"),
+    })
+
+
+@dataclass
 class DashboardConfig:
     enabled: bool = True
     # 127.0.0.1 only, deliberately: this port can close positions. Put real
@@ -92,6 +119,10 @@ class DashboardConfig:
 class BotConfig:
     hibachi: HibachiConfig
     phoenix: PhoenixConfig
+    # "funding" = carry the funding-rate spread; "volume" = farm volume with
+    # budgeted delta-neutral cycles.
+    mode: str = "funding"
+    volume: VolumeConfig = field(default_factory=VolumeConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     state_path: Path = Path("state/bot_state.json")
@@ -125,9 +156,19 @@ def load_config(path: str | Path) -> BotConfig:
 
     dashboard = DashboardConfig(**raw.get("dashboard", {}))
 
+    v = _decimals(
+        raw.get("volume", {}),
+        ("cycle_notional", "daily_volume_target", "max_daily_fees"),
+    )
+    if "taker_fee" in v:
+        v["taker_fee"] = {k: Decimal(str(x)) for k, x in v["taker_fee"].items()}
+    volume = VolumeConfig(**v)
+
     return BotConfig(
         hibachi=hibachi,
         phoenix=phoenix,
+        mode=str(raw.get("mode", "funding")),
+        volume=volume,
         strategy=strategy,
         dashboard=dashboard,
         state_path=Path(raw.get("state_path", "state/bot_state.json")),

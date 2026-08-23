@@ -203,6 +203,16 @@
 <div class="grid venues" id="venues"></div>
 
 <div class="grid bottom">
+  <div class="card hidden" id="farm-card">
+    <h2>Volume farming <small id="farm-style"></small></h2>
+    <table class="kv">
+      <tr><td>Volume today</td><td id="farm-volume">–</td></tr>
+      <tr><td>Per venue</td><td id="farm-by-venue">–</td></tr>
+      <tr><td>Cycles</td><td id="farm-cycles">–</td></tr>
+      <tr><td>Fees spent / budget</td><td id="farm-fees">–</td></tr>
+      <tr><td>Cost per $1k volume</td><td id="farm-cost">–</td></tr>
+    </table>
+  </div>
   <div class="card">
     <h2>Open position</h2>
     <div id="position-body"><p style="color:var(--ink-3);font-size:13px">No open position.</p></div>
@@ -330,7 +340,23 @@ function render(s) {
   renderPosition(s);
   renderIncidents(s);
   renderSettingsPlaceholders(s);
+  renderFarm(s);
   drawChart(s);
+}
+function renderFarm(s) {
+  const card = $("farm-card");
+  const farm = s.farm;
+  card.classList.toggle("hidden", !farm);
+  if (!farm) return;
+  $("btn-enter").textContent = enterArmed && Date.now() - enterArmed < 4000 ? "Confirm cycle?" : "Run cycle now";
+  $("farm-style").textContent = "· " + (farm.style === "solo" ? "solo cycles" : "hedged pair cycles");
+  $("farm-volume").textContent = fmt.usd(farm.volume_today) + (farm.volume_target ? ` / ${fmt.usd(farm.volume_target)} target` : "");
+  $("farm-by-venue").textContent = Object.entries(farm.volume_by_venue || {})
+    .map(([venue, vol]) => `${venue} ${fmt.usd(vol)}`).join(" · ") || "–";
+  $("farm-cycles").textContent = farm.cycles ?? "–";
+  $("farm-fees").textContent = `${fmt.usd(farm.fees_today)} / ${fmt.usd(farm.fee_budget)}`;
+  $("farm-cost").textContent = farm.volume_today > 0
+    ? fmt.usd(farm.fees_today / farm.volume_today * 1000) : "–";
 }
 function venueEquitySub(s) {
   const v = s.venues || {};

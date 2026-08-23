@@ -2,6 +2,31 @@
 # Copy to config.yaml (gitignored) and fill in credentials via environment
 # variables — ${VAR} is interpolated from the environment at load time.
 
+# What the bot does:
+#   funding = hold delta-neutral pairs to collect the funding-rate spread
+#   volume  = farm venue volume/points with budgeted delta-neutral cycles
+mode: funding
+
+# Settings for mode: volume
+volume:
+  # pair = hedged cycles across both venues (near-zero price risk).
+  # solo = open+close on one venue only (a few seconds of directional
+  #        exposure per cycle) — for farming one venue before the other
+  #        account is ready.
+  style: pair
+  solo_venue: hibachi
+  # Per-leg size of each cycle in USD.
+  cycle_notional: "200"
+  # Hold before closing (some points programs weight held open interest).
+  hold_s: 60
+  # Pause between cycles.
+  pause_s: 120
+  # Hard daily stops (UTC day) — whichever hits first ends the day.
+  # Rough cost: taker fees ~8bps round trip across both venues, i.e. about
+  # $0.80-1.00 per $1,000 of per-venue volume. Budget fees like a real cost.
+  daily_volume_target: "50000"
+  max_daily_fees: "10"
+
 # Start in paper mode: live market data from both venues, simulated fills,
 # no credentials required for Phoenix and no orders sent anywhere.
 paper: true

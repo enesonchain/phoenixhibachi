@@ -86,10 +86,18 @@ async def cmd_run(cfg: BotConfig) -> int:
             cfg.dashboard.host, cfg.dashboard.port,
         )
 
-    engine = Engine(
-        hibachi, phoenix, symbols, cfg.strategy, StateStore(cfg.state_path),
-        controller=controller,
-    )
+    if cfg.mode == "volume":
+        from deltabot.strategy.farm import FarmEngine
+
+        engine = FarmEngine(
+            hibachi, phoenix, symbols, cfg.strategy, cfg.volume,
+            StateStore(cfg.state_path), controller=controller,
+        )
+    else:
+        engine = Engine(
+            hibachi, phoenix, symbols, cfg.strategy, StateStore(cfg.state_path),
+            controller=controller,
+        )
     if cfg.paper:
         log.info("PAPER MODE: live market data, simulated fills — no real orders")
     try:

@@ -298,6 +298,19 @@ class PairExecutor:
                 "close_pair incomplete: " + "; ".join(str(f) for f in failures)
             )
 
+    # ------------------------------------------------------------ single leg
+
+    async def execute_single(
+        self, venue_name: str, side: Side, qty: Decimal
+    ) -> Decimal:
+        """Place one position-verified market order on one venue. Returns the
+        verified filled quantity."""
+        venue, symbol = self._leg(venue_name)
+        baseline = await self._position_qty(venue, symbol)
+        return await self._execute_leg(
+            venue, symbol, side, qty, baseline, _order_tag("s")
+        )
+
     # ------------------------------------------------------------- rebalance
 
     async def rebalance_delta(

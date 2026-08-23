@@ -116,6 +116,25 @@ It binds to `127.0.0.1` deliberately: anyone who can reach this port can
 close positions. Don't expose it without putting real authentication in
 front (SSH tunnel to your server: `ssh -L 8790:127.0.0.1:8790 yourbox`).
 
+## Volume-farming mode
+
+For farming venue volume / points programs instead of carry, set
+`mode: volume` in `config.yaml`. The bot then runs budgeted delta-neutral
+cycles: open a hedged pair (short one venue / long the other), hold
+`hold_s`, close, pause, repeat. Hedged cycles mean near-zero price risk —
+the cost is fees + spread, roughly **$0.80–1.00 per $1,000 of per-venue
+volume** at default taker rates. Two hard daily stops (`max_daily_fees`,
+`daily_volume_target`) end the day when hit; the dashboard shows volume,
+cycles, fees against budget, and realized cost per $1k as it runs.
+
+`style: solo` cycles a single venue instead (for farming Hibachi before a
+Phoenix account exists) — note each solo cycle carries a few seconds of
+real directional exposure between open and close, unlike pair cycles.
+
+Check each venue's points rules yourself: programs differ on whether they
+weight volume, fees paid, or held open interest (raise `hold_s` for the
+latter), and airdrops are never guaranteed — the fees you spend are.
+
 ## Strategy & risk controls
 
 Every `poll_interval_s` the engine snapshots funding, books, balances, and

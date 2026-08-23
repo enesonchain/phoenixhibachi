@@ -1,0 +1,59 @@
+# phoenixhibachi bot configuration.
+# Copy to config.yaml (gitignored) and fill in credentials via environment
+# variables — ${VAR} is interpolated from the environment at load time.
+
+# Start in paper mode: live market data from both venues, simulated fills,
+# no credentials required for Phoenix and no orders sent anywhere.
+paper: true
+paper_start_balance: "10000"
+
+log_level: INFO
+state_path: state/bot_state.json
+
+hibachi:
+  # Create under hibachi.xyz -> gear icon -> API. One key pair per account.
+  api_key: ${HIBACHI_API_KEY}
+  account_id: ${HIBACHI_ACCOUNT_ID}
+  # Wallet-created accounts: secp256k1 private key hex (0x-prefixed ok).
+  # Web accounts: the HMAC secret shown in the API settings page.
+  private_key: ${HIBACHI_PRIVATE_KEY}
+  symbol: BTC/USDT-P
+  # Max fee rate accepted per order, decimal fraction (0.0005 = 5 bps).
+  # Must be >= your account taker fee (default taker is 0.00045).
+  max_fees_percent: "0.0005"
+  # Hibachi settles funding hourly.
+  funding_interval_hours: 1
+
+phoenix:
+  symbol: BTC-PERP
+  data_api_url: https://perp-api.phoenix.trade
+  # "wallet" = live trading (requires an onboarded phoenix.trade account and
+  # the keys below). "unsupported" = data-only; paper mode still works fully.
+  execution_backend: wallet
+  # Any Solana mainnet RPC; a private endpoint (Helius/Triton/QuickNode) is
+  # strongly recommended over the public one for order latency.
+  rpc_url: ${SOLANA_RPC_URL}
+  # base58-encoded Solana keypair of the trader authority wallet — the wallet
+  # you onboarded on phoenix.trade. Fund it with USDC collateral there first.
+  wallet_private_key: ${PHOENIX_WALLET_PRIVATE_KEY}
+
+strategy:
+  # Enter when the net funding spread between venues exceeds this APR fraction
+  # (0.10 = 10% annualized). Exit when carry drops below exit_apr (hysteresis).
+  entry_apr: "0.10"
+  exit_apr: "0.02"
+  # Per-leg position size in USD; also capped by available collateral.
+  target_notional: "200"
+  max_notional: "1000"
+  # Refuse entry when either book is wider than this (taker cost gate).
+  max_book_spread_bps: "20"
+  # Rebalance once net delta exceeds this many USD.
+  delta_rebalance_notional: "25"
+  # Keep this fraction of equity free on each venue (liquidation buffer).
+  min_free_collateral_frac: "0.25"
+  # Halt entries if venue marks diverge more than this fraction (1% default).
+  max_mark_divergence: "0.01"
+  # Which leg executes first on entry (the other hedges immediately after).
+  first_leg: phoenix
+  poll_interval_s: 15
+  cooldown_s: 300
